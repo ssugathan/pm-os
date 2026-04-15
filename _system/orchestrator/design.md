@@ -63,6 +63,7 @@ Each agent is defined by:
 - **Sub-tasks** — discrete steps to get from inputs to outputs. Each sub-task has:
   - Description
   - Execution type: LLM call, deterministic script, or tool call (web search, file I/O, git)
+  - Turn type (if LLM): `single` (one prompt, one response) or `multi_turn` (conversation loop until termination condition). Most sub-tasks are single. Multi-turn is for sub-tasks requiring iterative refinement — assumption challenge, collaborative judgment points, complex design exploration.
   - Primary dimensions (if LLM) — the 2–3 eval dimensions most important for this sub-task
   - Model allocation (if LLM) — based on eval results for those dimensions
 
@@ -347,6 +348,44 @@ A crash can create these inconsistencies:
 
 ---
 
+## Error handling and retry strategy
+
+No fallback to alternative models. When a model is unavailable, the agent pauses and waits. Token budgets on secondary subscriptions (Gemini, GPT) are too limited to absorb fallback traffic.
+
+### Transient errors (API timeout, 429 rate limit, 500/502/503)
+
+Retry with exponential backoff:
+- Attempt 1: wait 2s
+- Attempt 2: wait 4s
+- Attempt 3: wait 8s
+- Attempt 4: wait 16s
+- Attempt 5: wait 32s
+
+Maximum 5 retries per sub-task. If still failing after 5 retries, pause the agent and warn: "API unavailable after 5 attempts. Agent paused at sub-task N. Resume when ready."
+
+Agent state file is current (async writes after each sub-task) — nothing is lost on pause.
+
+### Quota/limit errors (usage cap hit, billing issue)
+
+No retry — these won't resolve by waiting. Immediately pause and warn: "Usage limit reached for [model]. Agent paused at sub-task N. Check subscription status and resume when ready."
+
+### Malformed response (garbage, truncated, empty)
+
+Retry up to 2 times with the same prompt. If still bad after 2 retries, pause and present the malformed output to the user so they can diagnose. Log all attempts in agent state file.
+
+### Resume behavior
+
+User re-runs the orchestrator or types "resume." Orchestrator reads agent state file, finds last completed sub-task, picks up from the next one. No re-run of completed sub-tasks.
+
+### Give up condition
+
+If the same sub-task fails 5 times on transient errors across two separate user-initiated resume attempts (10 total tries), mark the sub-task as failed. Present options to user:
+- **Skip:** proceed to next sub-task without this one's output (downstream sub-tasks may degrade)
+- **Manual:** user provides the output themselves, agent continues with user-provided data
+- **Abort:** stop the agent run entirely, preserve all completed work
+
+---
+
 ## Agent output conventions
 
 Each agent writes its output to a known location in the artifact store. The orchestrator uses these locations to construct the next agent's inputs.
@@ -474,10 +513,11 @@ CLAUDE.md is not a substitute for the orchestrator's transactional context. It p
 7. **Architecture diagram update** — current diagram reflects original 5-agent structure. Needs updating for 7 agents, transactional state file, and interrupt flow.
 8. **API usage/quota visibility** — do Claude Max, ChatGPT Plus, and Google AI Pro expose remaining usage/quota via API? If yes, integrate into pre-run budget estimation and mid-run monitoring. If no, track internally by logging token counts per sub-task and maintaining a running total.
 9. **project-context.md update mechanism** — who updates this file as the product evolves? Consider: each agent proposes changes as an optional output, user approves at gate. Prevents staleness without unbounded growth.
-10. **Multi-turn sub-tasks** — some sub-tasks (assumption challenge, collaborative judgment points) may benefit from multi-turn conversation rather than single prompt→response. Need to define turn management and termination conditions.
-11. **API fallback strategy** — when the primary model for a sub-task is unavailable (API down, quota exhausted), fall back to second-best model per dimension scores. Config should support `fallback_model` per sub-task. Log when fallback is used.
+10. **Multi-turn sub-tasks** — some sub-tasks (assumption challenge, collaborative judgment points) may benefit from multi-turn conversation rather than single prompt→response. `turn_type` field added to sub-task definition. Need to define termination conditions per sub-task (max turns, convergence criteria, user exit).
+11. ~~API fallback strategy~~ → Resolved: no fallback. Graceful pause with retry on transient errors, immediate pause on quota errors, user-initiated resume. See "Error handling and retry strategy" section.
 
 ### Resolved in this version
 - ~~Context window management~~ → Resolved: context budget management with pre-dispatch token check, compression strategies in priority order, and logging. See "Context budget management" section.
 - ~~State consistency~~ → Resolved: source of truth hierarchy (agent state > orchestrator state > disk/git), crash scenario resolution table, and 7-step recovery sequence. See "State consistency" section.
 - ~~Output validation~~ → Resolved: structural validation (always, deterministic) + content validation (configurable, may use LLM). Validation results logged in agent state file. See "Output validation" section.
+- ~~API fallback strategy~~ → Resolved: no fallback to other models. Retry with exponential backoff, graceful pause, user-initiated resume. See "Error handling and retry strategy" section.
