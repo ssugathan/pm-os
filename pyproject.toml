@@ -7,7 +7,9 @@ name = "pmos"
 version = "0.1.0"
 description = "PM OS — multi-agent orchestrator for end-to-end product workflow"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pyyaml>=6.0",
+]
 
 [project.optional-dependencies]
 dev = [
