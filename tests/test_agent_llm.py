@@ -196,3 +196,70 @@ def test_llmagent_find_record_raises_on_unknown_name(tmp_path: Path):
     )
     with pytest.raises(KeyError, match="nonexistent"):
         agent._find_record(state, "nonexistent")
+
+
+# ---------- Retry integration ----------
+
+
+@pytest.fixture
+def no_sleep(monkeypatch):
+    """Stub time.sleep in retry so retry-flow tests don't actually wait."""
+    monkeypatch.setattr("pmos.retry.time.sleep", lambda s: None)
+
+
+def test_adapter_transient_then_success_retries_and_records_telemetry(
+    tmp_path: Path, no_sleep
+):
+    from pmos.adapters.base import TransientError
+
+    _seed_smoke_template(tmp_path)
+    adapter = MagicMock()
+    adapter.call.side_effect = [
+        TransientError("temporary"),
+        Response(text="pong", tokens_in=10, tokens_out=2, model="claude-sonnet-4-6"),
+    ]
+    agent = SmokeAgent(
+        base_dir=tmp_path,
+        adapter=adapter,
+        config=Config(),
+        repo_root=tmp_path,
+    )
+    orch = Orchestrator(tmp_path)
+
+    result = orch.dispatch(agent, run_id="r1", inputs={})
+
+    assert result.task_state == TaskState.COMPLETE
+    assert adapter.call.call_count == 2
+
+    events = _read_events(tmp_path)
+    retries = [e for e in events if e["event"] == "retry.attempted"]
+    assert len(retries) == 1
+    assert retries[0]["properties"]["error_type"] == "transient"
+    assert retries[0]["properties"]["retry_num"] == 1
+    # llm.call event still fires after the successful call
+    llm_calls = [e for e in events if e["event"] == "llm.call"]
+    assert len(llm_calls) == 1
+
+
+def test_adapter_quota_propagates_without_retry(tmp_path: Path, no_sleep):
+    from pmos.adapters.base import QuotaError
+
+    _seed_smoke_template(tmp_path)
+    adapter = MagicMock()
+    adapter.call.side_effect = QuotaError("usage limit hit")
+    agent = SmokeAgent(
+        base_dir=tmp_path,
+        adapter=adapter,
+        config=Config(),
+        repo_root=tmp_path,
+    )
+    orch = Orchestrator(tmp_path)
+
+    with pytest.raises(QuotaError, match="usage limit"):
+        orch.dispatch(agent, run_id="r2", inputs={})
+
+    assert adapter.call.call_count == 1  # no retry on quota
+    events = _read_events(tmp_path)
+    retries = [e for e in events if e["event"] == "retry.attempted"]
+    assert len(retries) == 1
+    assert retries[0]["properties"]["error_type"] == "quota"

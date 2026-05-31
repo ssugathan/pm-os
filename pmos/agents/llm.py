@@ -26,6 +26,7 @@ from pmos.prompts import (
     load_template,
     prompt_sha,
 )
+from pmos.retry import retry_call
 from pmos.state import AgentRunState, SubTaskRecord
 
 
@@ -84,8 +85,24 @@ class LLMAgent(Agent):
         prompt = assemble_prompt(components)
         system = metadata.get("system")
 
+        def on_retry(props: dict) -> None:
+            telemetry.event(
+                "retry.attempted",
+                {
+                    "run_id": state.run_id,
+                    "agent": self.name,
+                    "sub_task": sub_task_name,
+                    **props,
+                },
+                base_dir=self.base_dir,
+            )
+
         start = time.monotonic()
-        response = self.adapter.call(prompt, system=system)
+        response = retry_call(
+            lambda: self.adapter.call(prompt, system=system),
+            policy=self.config.retry,
+            on_retry=on_retry,
+        )
         telemetry.event(
             "llm.call",
             {
