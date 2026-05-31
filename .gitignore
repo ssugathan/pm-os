@@ -1,2 +1,16 @@
 .DS_Store
 .claude/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Runtime state (transactional, not source of truth)
+_system/orchestrator/current-state.json
+_system/agent-state/

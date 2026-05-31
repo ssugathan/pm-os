@@ -168,6 +168,33 @@ The orchestrator constructs each agent's prompt by assembling five components:
 
 The orchestrator is responsible for assembling 1–5 into a single prompt and dispatching it to the correct model. Config overrides from `config-overrides.yaml` influence which sub-tasks run and in what mode but are not included in the prompt itself — they're read by the agent's Python code.
 
+### Prompt versioning
+
+Prompts are markdown files in `_system/prompt-templates/[agent]/[task].md`. Versioning is **git-based with flat naming** — no `-v2` suffixes. Each change to a prompt is a git commit; git history is the audit trail.
+
+**Frontmatter** carries metadata per prompt:
+
+```markdown
+---
+agent: research
+sub_task: scope_definition
+model: claude
+effort: standard       # standard | high | xhigh
+turn_type: single      # single | multi_turn
+---
+
+[prompt body]
+```
+
+**SHA capture at dispatch.** To make runs reproducible, the orchestrator captures git SHAs at two granularities:
+
+- **Per-sub-task `prompt_sha`** — recorded in the agent state file at dispatch time via `git log -1 --format=%H <path-to-prompt-file>`. Tells you exactly which version of the prompt produced each sub-task's output.
+- **Run-start `run_started_at_commit`** — recorded in the orchestrator state file when a pipeline run begins. Tells you what state the entire system was in at run start.
+
+Together these answer two reproducibility questions: "what was the system at when this run started" and "what version of this specific prompt was used for this specific sub-task call."
+
+**Uncommitted prompt files.** Default behavior is **warn + record `dirty: true` alongside SHA** — dispatch proceeds but the agent state file flags that the prompt file had uncommitted changes. A `strict_prompt_versioning: true` config flag makes the orchestrator fail-fast (refuse to dispatch) when prompts are dirty — recommended for production / regulated runs.
+
 ### Context budget management
 
 Each model has a context window limit. The assembled prompt (components 1–4 above) must fit within it, leaving room for the model's response.
@@ -283,6 +310,7 @@ The orchestrator writes a state file to disk at every state transition. Location
 
 The state file captures:
 - Current pipeline run ID
+- `run_started_at_commit` — git HEAD SHA of the pm-os repo at run start (reproducibility anchor)
 - List of all tasks in the pipeline with their current state (queued/running/review/complete)
 - The currently active task
 - The active agent and model
@@ -453,6 +481,8 @@ Each sub-task's entry in the agent state file includes a validation result:
 {
   "sub_task": "9_master_synthesis",
   "status": "complete",
+  "prompt_sha": "abc123def456...",
+  "prompt_dirty": false,
   "validation": {
     "structural": "passed",
     "content": {
@@ -507,7 +537,7 @@ CLAUDE.md is not a substitute for the orchestrator's transactional context. It p
 1. **State file format** — JSON is simple but may want to move to SQLite if the run log grows large. Start with JSON, migrate if needed.
 2. **Multi-model API management** — the orchestrator needs API clients for Claude, Gemini, and GPT. Each agent may call multiple models across sub-tasks. Consider a thin adapter layer so swapping models per sub-task is a config change, not a code change.
 3. **Adversarial triangulation integration** — currently a manual pattern (query all three, compare). Could be formalized as a special orchestrator mode. Not needed for v1.
-4. **Prompt versioning** — identified as high-irreversibility. Needs a convention before the orchestrator is built. Options: git-based (prompts are files, versioned by commit), or explicit version numbers in filenames.
+4. ~~Prompt versioning~~ → Resolved: git-based + flat naming, frontmatter for metadata, per-sub-task `prompt_sha` captured at dispatch, run-start commit SHA in orchestrator state, warn-and-mark-dirty default for uncommitted prompts (fail-fast as `strict_prompt_versioning` flag). See "Prompt versioning" section.
 5. **Gate placement finalization** — with 7 agents instead of 5, the original three gates need revisiting. Not every transition needs a gate. Finalize after sub-task definitions are complete.
 6. **Dashboard (deferred)** — Phase 1: terminal-only. Phase 2: read-only web UI on top of state file and run log. Phase 3: active UI with gate approvals, interrupts, mode toggles. Build after first full manual product cycle.
 7. **Architecture diagram update** — current diagram reflects original 5-agent structure. Needs updating for 7 agents, transactional state file, and interrupt flow.
@@ -521,3 +551,4 @@ CLAUDE.md is not a substitute for the orchestrator's transactional context. It p
 - ~~State consistency~~ → Resolved: source of truth hierarchy (agent state > orchestrator state > disk/git), crash scenario resolution table, and 7-step recovery sequence. See "State consistency" section.
 - ~~Output validation~~ → Resolved: structural validation (always, deterministic) + content validation (configurable, may use LLM). Validation results logged in agent state file. See "Output validation" section.
 - ~~API fallback strategy~~ → Resolved: no fallback to other models. Retry with exponential backoff, graceful pause, user-initiated resume. See "Error handling and retry strategy" section.
+- ~~Prompt versioning~~ → Resolved: git-based + flat naming, per-sub-task `prompt_sha` at dispatch, run-start commit SHA in orchestrator state, warn-and-mark-dirty default. See "Prompt versioning" section.
