@@ -7,9 +7,11 @@ gates, judgment points, and prompt assembly come in later commits.
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
+from pmos import telemetry
 from pmos.agents.base import Agent
 from pmos.state import AgentRunState, OrchestratorState, TaskState
 
@@ -32,10 +34,44 @@ class Orchestrator:
         orch_state.active_task_state = TaskState.RUNNING
         orch_state.save(self.base_dir)
 
-        result = agent.run(run_id, inputs)
+        start = time.monotonic()
+        telemetry.event(
+            "agent.dispatched",
+            {
+                "run_id": run_id,
+                "agent": agent.name,
+                "run_started_at_commit": orch_state.run_started_at_commit,
+            },
+            base_dir=self.base_dir,
+        )
+
+        try:
+            result = agent.run(run_id, inputs)
+        except Exception as e:
+            telemetry.event(
+                "agent.failed",
+                {
+                    "run_id": run_id,
+                    "agent": agent.name,
+                    "error_type": type(e).__name__,
+                    "duration_ms": int((time.monotonic() - start) * 1000),
+                },
+                base_dir=self.base_dir,
+            )
+            raise
 
         orch_state.active_task_state = TaskState.COMPLETE
         orch_state.save(self.base_dir)
+        telemetry.event(
+            "agent.completed",
+            {
+                "run_id": run_id,
+                "agent": agent.name,
+                "duration_ms": int((time.monotonic() - start) * 1000),
+                "sub_task_count": len(result.sub_tasks),
+            },
+            base_dir=self.base_dir,
+        )
         return result
 
     def recover(self, agent: Agent, run_id: str) -> AgentRunState:

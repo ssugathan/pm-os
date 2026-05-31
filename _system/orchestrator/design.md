@@ -500,19 +500,21 @@ If validation fails and the sub-task is re-run, both attempts are logged so the 
 
 ## Observability log
 
-Every agent action is logged to `_system/orchestrator/run-log.md` (or a structured log file) with:
+Every agent action emits a telemetry event via `pmos.telemetry.event(name, properties)`. Events capture:
 - Timestamp
 - Agent name
 - Sub-task name and model used (agents may call different models per sub-task)
-- Task description
-- Input files read
-- Output files written
 - Duration
 - Interaction mode (autonomous/collaborative)
 - Gate decisions (if applicable)
 - User interrupts and feedback (if applicable)
+- prompt_sha and prompt_dirty (for the sub-task-level events)
 
-The log serves two purposes: audit trail for debugging, and recoverable context if the state file is corrupted.
+**Implementation:** v1 backend appends fsynced jsonl to `_system/telemetry/events.jsonl`. Payload shape matches PostHog's `capture` format (`event` / `distinct_id` / `properties`) so the v2 backend swap is a one-file change with no call-site impact. Sid using PM OS himself is the first live "user" — the telemetry stream is the audit trail for tuning the system based on real usage before any third-party deployment.
+
+**Discipline: metadata only.** Telemetry tracks names, counts, durations, models, prompt SHAs, and error *types*. It never tracks prompt contents, agent outputs, or any artifact body — those stay in the agent state file (source of truth, local).
+
+The log serves three purposes: audit trail for debugging, recoverable context if the state file is corrupted, and a feedback signal for tuning model allocation, judgment-point modes, and gate placement based on observed usage.
 
 ---
 

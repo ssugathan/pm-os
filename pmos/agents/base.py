@@ -11,9 +11,11 @@ recovery works.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any, Callable
 
+from pmos import telemetry
 from pmos.state import (
     AgentRunState,
     SubTaskRecord,
@@ -56,21 +58,54 @@ class Agent:
         state.task_state = TaskState.RUNNING
         state.save(self.base_dir)
 
-        for record, (_name, func) in zip(state.sub_tasks, defs, strict=True):
+        for record, (sub_task_name, func) in zip(state.sub_tasks, defs, strict=True):
             if record.status == SubTaskStatus.COMPLETE:
                 continue  # idempotent skip
             record.status = SubTaskStatus.RUNNING
             state.save(self.base_dir)
+            sub_start = time.monotonic()
+            telemetry.event(
+                "sub_task.started",
+                {
+                    "run_id": state.run_id,
+                    "agent": self.name,
+                    "sub_task": sub_task_name,
+                    "prompt_sha": record.prompt_sha,
+                    "prompt_dirty": record.prompt_dirty,
+                },
+                base_dir=self.base_dir,
+            )
             try:
                 output = func(state)
             except Exception as e:
                 record.status = SubTaskStatus.FAILED
                 record.error = str(e)
                 state.save(self.base_dir)
+                telemetry.event(
+                    "sub_task.failed",
+                    {
+                        "run_id": state.run_id,
+                        "agent": self.name,
+                        "sub_task": sub_task_name,
+                        "error_type": type(e).__name__,
+                        "duration_ms": int((time.monotonic() - sub_start) * 1000),
+                    },
+                    base_dir=self.base_dir,
+                )
                 raise
             record.status = SubTaskStatus.COMPLETE
             record.output = output
             state.save(self.base_dir)
+            telemetry.event(
+                "sub_task.completed",
+                {
+                    "run_id": state.run_id,
+                    "agent": self.name,
+                    "sub_task": sub_task_name,
+                    "duration_ms": int((time.monotonic() - sub_start) * 1000),
+                },
+                base_dir=self.base_dir,
+            )
 
         state.task_state = TaskState.COMPLETE
         state.save(self.base_dir)

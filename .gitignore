@@ -14,3 +14,4 @@ venv/
 # Runtime state (transactional, not source of truth)
 _system/orchestrator/current-state.json
 _system/agent-state/
+_system/telemetry/
