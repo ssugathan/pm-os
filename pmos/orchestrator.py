@@ -13,6 +13,12 @@ from typing import Any
 
 from pmos import telemetry
 from pmos.agents.base import Agent
+from pmos.gate import (
+    GateHandler,
+    GateModifyRequested,
+    GateOutcome,
+    GateRejected,
+)
 from pmos.state import AgentRunState, OrchestratorState, TaskState
 
 
@@ -20,7 +26,14 @@ class Orchestrator:
     def __init__(self, base_dir: Path):
         self.base_dir = Path(base_dir)
 
-    def dispatch(self, agent: Agent, run_id: str, inputs: dict[str, Any]) -> AgentRunState:
+    def dispatch(
+        self,
+        agent: Agent,
+        run_id: str,
+        inputs: dict[str, Any],
+        *,
+        gate_handler: GateHandler | None = None,
+    ) -> AgentRunState:
         """Dispatch an agent for a fresh run.
 
         If state already exists for (agent.name, run_id), the agent's run loop
@@ -28,6 +41,10 @@ class Orchestrator:
         `recover()` for explicit resume — the difference is that `recover()`
         loads inputs from the existing state file, while `dispatch()` takes
         them from the caller.
+
+        When `gate_handler` is provided, it's invoked after a successful agent
+        run. Raises `GateRejected` on reject or `GateModifyRequested` on modify
+        so the caller decides how to act (re-dispatch with feedback, abort, etc.).
         """
         orch_state = self._load_or_init_state(run_id)
         orch_state.active_agent = agent.name
@@ -72,7 +89,38 @@ class Orchestrator:
             },
             base_dir=self.base_dir,
         )
+
+        if gate_handler is not None:
+            self._run_gate(gate_handler, agent.name, result)
+
         return result
+
+    def _run_gate(
+        self,
+        handler: GateHandler,
+        agent_name: str,
+        state: AgentRunState,
+    ) -> None:
+        telemetry.event(
+            "gate.presented",
+            {"run_id": state.run_id, "agent": agent_name},
+            base_dir=self.base_dir,
+        )
+        decision = handler.review(agent_name, state)
+        telemetry.event(
+            "gate.decided",
+            {
+                "run_id": state.run_id,
+                "agent": agent_name,
+                "outcome": decision.outcome.value,
+                "has_feedback": bool(decision.feedback),
+            },
+            base_dir=self.base_dir,
+        )
+        if decision.outcome == GateOutcome.REJECTED:
+            raise GateRejected(f"{agent_name} run rejected at gate")
+        if decision.outcome == GateOutcome.MODIFY_REQUESTED:
+            raise GateModifyRequested(decision.feedback)
 
     def recover(self, agent: Agent, run_id: str) -> AgentRunState:
         """Resume an interrupted agent run. Loads inputs from the existing state file."""
