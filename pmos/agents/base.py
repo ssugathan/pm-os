@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from pmos import telemetry
+from pmos.judgment import JudgmentHandler, JudgmentMode, JudgmentRecord
 from pmos.state import (
     AgentRunState,
     SubTaskRecord,
@@ -30,15 +31,91 @@ class Agent:
 
     `sub_tasks()` returns an ordered list of (name, callable) tuples.
     Each callable takes `(state: AgentRunState)` and returns the output to record.
+
+    Optional kwargs:
+    - judgment_modes: maps judgment point name → "automated" | "collaborative"
+    - judgment_handler: invoked for collaborative judgments
     """
 
     name: str = "base"
 
-    def __init__(self, base_dir: Path):
+    def __init__(
+        self,
+        base_dir: Path,
+        *,
+        judgment_modes: dict[str, str] | None = None,
+        judgment_handler: JudgmentHandler | None = None,
+    ):
         self.base_dir = Path(base_dir)
+        self.judgment_modes = judgment_modes or {}
+        self.judgment_handler = judgment_handler
 
     def sub_tasks(self) -> list[tuple[str, Callable[[AgentRunState], Any]]]:
         raise NotImplementedError
+
+    def judgment(
+        self,
+        state: AgentRunState,
+        name: str,
+        question: str,
+        options: list[str],
+        context: str = "",
+        *,
+        automated_decider: Callable[[], tuple[str, str]] | None = None,
+    ) -> str:
+        """Fire a judgment point. Returns the chosen decision string.
+
+        Mode comes from `judgment_modes[name]`, defaulting to AUTOMATED.
+        - AUTOMATED requires `automated_decider` — sub-task supplies the logic
+          (heuristic, LLM call, etc.) that returns (decision, reasoning).
+        - COLLABORATIVE requires `judgment_handler` on the agent — the human
+          decides via the handler.
+
+        The decision is appended to `state.judgment_log`, state is saved, and a
+        `judgment.fired` telemetry event is emitted.
+        """
+        mode = JudgmentMode(self.judgment_modes.get(name, JudgmentMode.AUTOMATED.value))
+
+        if mode is JudgmentMode.AUTOMATED:
+            if automated_decider is None:
+                raise ValueError(
+                    f"Judgment {name!r} is automated but no automated_decider was provided"
+                )
+            decision, reasoning = automated_decider()
+        else:
+            if self.judgment_handler is None:
+                raise ValueError(
+                    f"Judgment {name!r} is collaborative but agent has no judgment_handler"
+                )
+            decision, reasoning = self.judgment_handler.decide(
+                name, question, options, context
+            )
+
+        record = JudgmentRecord(
+            name=name,
+            mode=mode,
+            question=question,
+            options=list(options),
+            decision=decision,
+            reasoning=reasoning,
+            context=context,
+        )
+        state.judgment_log.append(record.to_dict())
+        state.save(self.base_dir)
+
+        telemetry.event(
+            "judgment.fired",
+            {
+                "run_id": state.run_id,
+                "agent": self.name,
+                "judgment_name": name,
+                "mode": mode.value,
+                "decision": decision,
+            },
+            base_dir=self.base_dir,
+        )
+
+        return decision
 
     def run(self, run_id: str, inputs: dict[str, Any]) -> AgentRunState:
         """Run from scratch or resume an existing run. Idempotent on completed sub-tasks."""

@@ -52,6 +52,7 @@ class AgentRunState:
     task_state: TaskState = TaskState.QUEUED
     sub_tasks: list[SubTaskRecord] = field(default_factory=list)
     inputs: dict[str, Any] = field(default_factory=dict)
+    judgment_log: list[dict[str, Any]] = field(default_factory=list)
     started_at: str = ""
     updated_at: str = ""
 
@@ -72,6 +73,7 @@ class AgentRunState:
                 for st in self.sub_tasks
             ],
             "inputs": self.inputs,
+            "judgment_log": self.judgment_log,
             "started_at": self.started_at,
             "updated_at": self.updated_at,
         }
@@ -94,6 +96,7 @@ class AgentRunState:
                 for st in data.get("sub_tasks", [])
             ],
             inputs=data.get("inputs", {}),
+            judgment_log=data.get("judgment_log", []),
             started_at=data.get("started_at", ""),
             updated_at=data.get("updated_at", ""),
         )

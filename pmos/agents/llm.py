@@ -43,8 +43,9 @@ class LLMAgent(Agent):
         config: Config,
         repo_root: Path | None = None,
         template_dir: Path | None = None,
+        **kwargs,
     ):
-        super().__init__(base_dir)
+        super().__init__(base_dir, **kwargs)
         self.adapter = adapter
         self.config = config
         self.repo_root = Path(repo_root) if repo_root else Path(base_dir)
