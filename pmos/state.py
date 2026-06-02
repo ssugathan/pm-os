@@ -41,6 +41,7 @@ class SubTaskRecord:
     prompt_dirty: bool = False
     output: Any = None
     error: str | None = None
+    validation: dict[str, Any] | None = None  # last ValidationReport.to_dict()
 
 
 @dataclass
@@ -69,6 +70,7 @@ class AgentRunState:
                     "prompt_dirty": st.prompt_dirty,
                     "output": st.output,
                     "error": st.error,
+                    "validation": st.validation,
                 }
                 for st in self.sub_tasks
             ],
@@ -92,6 +94,7 @@ class AgentRunState:
                     prompt_dirty=st.get("prompt_dirty", False),
                     output=st.get("output"),
                     error=st.get("error"),
+                    validation=st.get("validation"),
                 )
                 for st in data.get("sub_tasks", [])
             ],

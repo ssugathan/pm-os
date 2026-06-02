@@ -24,6 +24,11 @@ from pmos.state import (
     TaskState,
     now_iso,
 )
+from pmos.validation import (
+    ValidationFailed,
+    Validator,
+    run_validators,
+)
 
 
 class Agent:
@@ -45,13 +50,116 @@ class Agent:
         *,
         judgment_modes: dict[str, str] | None = None,
         judgment_handler: JudgmentHandler | None = None,
+        validators: dict[str, dict[str, list[Validator]]] | None = None,
+        max_validation_retries: int = 2,
     ):
         self.base_dir = Path(base_dir)
         self.judgment_modes = judgment_modes or {}
         self.judgment_handler = judgment_handler
+        self.validators = validators or {}
+        self.max_validation_retries = max_validation_retries
 
     def sub_tasks(self) -> list[tuple[str, Callable[[AgentRunState], Any]]]:
         raise NotImplementedError
+
+    def _execute_sub_task(
+        self,
+        state: AgentRunState,
+        record: SubTaskRecord,
+        sub_task_name: str,
+        func: Callable[[AgentRunState], Any],
+    ) -> None:
+        record.status = SubTaskStatus.RUNNING
+        state.save(self.base_dir)
+        sub_start = time.monotonic()
+        telemetry.event(
+            "sub_task.started",
+            {
+                "run_id": state.run_id,
+                "agent": self.name,
+                "sub_task": sub_task_name,
+                "prompt_sha": record.prompt_sha,
+                "prompt_dirty": record.prompt_dirty,
+            },
+            base_dir=self.base_dir,
+        )
+
+        validators = self.validators.get(sub_task_name, {})
+        attempts_remaining = self.max_validation_retries
+
+        while True:
+            try:
+                output = func(state)
+            except Exception as e:
+                record.status = SubTaskStatus.FAILED
+                record.error = str(e)
+                state.save(self.base_dir)
+                telemetry.event(
+                    "sub_task.failed",
+                    {
+                        "run_id": state.run_id,
+                        "agent": self.name,
+                        "sub_task": sub_task_name,
+                        "error_type": type(e).__name__,
+                        "duration_ms": int((time.monotonic() - sub_start) * 1000),
+                    },
+                    base_dir=self.base_dir,
+                )
+                raise
+
+            report = run_validators(validators, output, state)
+            record.validation = report.to_dict()
+
+            if report.passed:
+                break
+
+            if attempts_remaining > 0:
+                attempts_remaining -= 1
+                telemetry.event(
+                    "validation.retry_triggered",
+                    {
+                        "run_id": state.run_id,
+                        "agent": self.name,
+                        "sub_task": sub_task_name,
+                        "failed_checks": [r.check_name for r in report.failed_checks()],
+                        "attempts_remaining": attempts_remaining,
+                    },
+                    base_dir=self.base_dir,
+                )
+                state.save(self.base_dir)
+                continue
+
+            # exhausted
+            record.status = SubTaskStatus.FAILED
+            record.error = f"validation failed: {[r.check_name for r in report.failed_checks()]}"
+            record.output = output
+            state.save(self.base_dir)
+            telemetry.event(
+                "sub_task.failed",
+                {
+                    "run_id": state.run_id,
+                    "agent": self.name,
+                    "sub_task": sub_task_name,
+                    "error_type": "ValidationFailed",
+                    "duration_ms": int((time.monotonic() - sub_start) * 1000),
+                },
+                base_dir=self.base_dir,
+            )
+            raise ValidationFailed(report)
+
+        record.status = SubTaskStatus.COMPLETE
+        record.output = output
+        state.save(self.base_dir)
+        telemetry.event(
+            "sub_task.completed",
+            {
+                "run_id": state.run_id,
+                "agent": self.name,
+                "sub_task": sub_task_name,
+                "duration_ms": int((time.monotonic() - sub_start) * 1000),
+            },
+            base_dir=self.base_dir,
+        )
 
     def judgment(
         self,
@@ -138,51 +246,7 @@ class Agent:
         for record, (sub_task_name, func) in zip(state.sub_tasks, defs, strict=True):
             if record.status == SubTaskStatus.COMPLETE:
                 continue  # idempotent skip
-            record.status = SubTaskStatus.RUNNING
-            state.save(self.base_dir)
-            sub_start = time.monotonic()
-            telemetry.event(
-                "sub_task.started",
-                {
-                    "run_id": state.run_id,
-                    "agent": self.name,
-                    "sub_task": sub_task_name,
-                    "prompt_sha": record.prompt_sha,
-                    "prompt_dirty": record.prompt_dirty,
-                },
-                base_dir=self.base_dir,
-            )
-            try:
-                output = func(state)
-            except Exception as e:
-                record.status = SubTaskStatus.FAILED
-                record.error = str(e)
-                state.save(self.base_dir)
-                telemetry.event(
-                    "sub_task.failed",
-                    {
-                        "run_id": state.run_id,
-                        "agent": self.name,
-                        "sub_task": sub_task_name,
-                        "error_type": type(e).__name__,
-                        "duration_ms": int((time.monotonic() - sub_start) * 1000),
-                    },
-                    base_dir=self.base_dir,
-                )
-                raise
-            record.status = SubTaskStatus.COMPLETE
-            record.output = output
-            state.save(self.base_dir)
-            telemetry.event(
-                "sub_task.completed",
-                {
-                    "run_id": state.run_id,
-                    "agent": self.name,
-                    "sub_task": sub_task_name,
-                    "duration_ms": int((time.monotonic() - sub_start) * 1000),
-                },
-                base_dir=self.base_dir,
-            )
+            self._execute_sub_task(state, record, sub_task_name, func)
 
         state.task_state = TaskState.COMPLETE
         state.save(self.base_dir)
