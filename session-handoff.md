@@ -36,12 +36,12 @@ Deferred to Phase 2: Stop hook + TDD pre-write hook (built alongside Dev & QA). 
 
 ## WHO YOU ARE TALKING TO
 
-Sid Sugathan — Product Manager with 8 years PM experience, ~15 years total across business analysis, startups, and enterprise. Currently preparing for AI PM roles at OpenAI, Anthropic, Google/DeepMind, and Meta. Building two connected systems simultaneously:
+Sid Sugathan — Product Manager. (personal context moved to pm-os-build)
 
-1. **AI PM Workflow (personal operating system)** — a multi-agent system that simulates end-to-end PM work, optimized for learning, interview prep, and building real products efficiently
-2. **Titato app** — a social communication practice app for neurodiverse children aged 3–6, featuring characters from the Fossil Friends comic series (co-created with Sid's 5-year-old son)
+Building two connected systems simultaneously:
 
-Sid's working style: strongest at the logical layer, prefers brevity and actionable density over comprehensive coverage, values models that challenge assumptions over models that agree, treats AI as a thinking partner not a search engine.
+1. **AI PM Workflow (personal operating system)** — a multi-agent system that simulates end-to-end PM work, optimized for learning and building real products efficiently
+2. **Titato app** — a social communication practice app for neurodiverse children aged 3–6, featuring characters from the Fossil Friends comic series
 
 ---
 
@@ -276,19 +276,13 @@ Reviewed full system end-to-end. 10 items identified:
 - **Open question:** API usage/quota visibility — do subscriptions expose remaining quota via API? (#7)
 - **Captured in design:** API fallback strategy (#2), multi-turn sub-tasks (#1), project-context.md update mechanism (#4)
 
-### Blog and LinkedIn posts — PUBLISHED / DRAFTED
+### Blog and LinkedIn posts
 
 **Published:**
 - Blog post 1: "Building an agentic PM workflow: Vision and Plan" — live at sid-pm.com/musings/building-agentic-pm-1
 - LinkedIn post 1: vision and plan summary — published
 
-**Drafted (ready to publish):**
-- Blog post 2: "Building an agentic PM workflow: the eval process" — covers methodology, rubric, streams, findings, allocation, what I'd do differently
-- LinkedIn post 2: eval process summary
-
-**Planned (not yet written):**
-- Blog post 3: the actual build
-- Blog post 4: test runs
+**Drafts and post planning:** (personal context moved to pm-os-build)
 
 ### The Titato product artifacts
 Seed artifacts written and in the repo:
@@ -316,15 +310,13 @@ CLAUDE.md is a Claude Code-specific file that provides persistent session contex
 
 **1. Define remaining 6 agent specs** — product definition, design, planning, dev & QA, deployment, feedback. Research agent is done. Same template: inputs, outputs, sub-tasks, judgment points, model allocation.
 
-**2. Publish blog post 2 and LinkedIn post 2** — eval process posts are drafted and ready.
+**2. Run targeted evals for unsettled capabilities** — user journey generation, backlog prioritization, UX reasoning, sprint planning, content/copy. Only after sub-task definitions reveal which gaps matter.
 
-**3. Run targeted evals for unsettled capabilities** — user journey generation, backlog prioritization, UX reasoning, sprint planning, content/copy. Only after sub-task definitions reveal which gaps matter.
+**3. Architecture decision for Titato app** — Option A vs B vs Hybrid. One-shot high-irreversibility decision. Options documented in `architecture/options.md`.
 
-**4. Architecture decision for Titato app** — Option A vs B vs Hybrid. One-shot high-irreversibility decision. Options documented in `architecture/options.md`.
+**4. Build PM OS orchestrator** — scaffold in Python. Design spec at `_system/orchestrator/design.md` is substantially complete. Start with raw Python state machine.
 
-**5. Build PM OS orchestrator** — scaffold in Python. Design spec at `_system/orchestrator/design.md` is substantially complete. Start with raw Python state machine.
-
-**6. Build Phase 1 of Titato app** — Flutter project setup, one complete Dino Valley scene, TTS working, parent setup screen.
+**5. Build Phase 1 of Titato app** — Flutter project setup, one complete Dino Valley scene, TTS working, parent setup screen.
 
 ---
 
@@ -336,11 +328,7 @@ CLAUDE.md is a Claude Code-specific file that provides persistent session contex
 
 **Blog:** sid-pm.com/musings
 
-**Subscriptions:**
-- Claude Max $100/mo (Opus 4.6 access)
-- ChatGPT Plus $20/mo (GPT-5 Thinking, usage-capped)
-- Google AI Pro $20/mo (Gemini Pro)
-- Cursor $20/mo (primarily for coding and prototyping)
+**Subscriptions:** (personal context moved to pm-os-build)
 
 **Key design principles Sid has established:**
 - AI PM workflow may be over-engineered for learning — that is intentional
@@ -350,19 +338,10 @@ CLAUDE.md is a Claude Code-specific file that provides persistent session contex
 - Every major decision gets logged in `decisions/log.md` with rationale
 - Token distribution across subscriptions is a legitimate practical factor in model allocation — documented honestly, not hidden
 
-**Sid's communication style (for writing posts):**
-- Conversational, first-person, no hype
-- Framed as experiment and learning, not "look at my creation"
-- Substance over headlines — targeting recruiters/hiring managers who visit his profile, not viral reach
-- Concrete examples over abstract frameworks
-- Comfortable referencing past builds (Lego app, smart trash can) but doesn't name Titato publicly yet
-- Blog link in LinkedIn comments, feedback ask at the end of posts
-
 **Open items requiring decisions:**
 - Adversarial triangulation — designed conceptually, not yet implemented as a system component
 - Decision reversibility framework — identified, not yet written to `architecture/decision.md`
 - Gold set schema — placeholder only, high-irreversibility decision needing careful design
-- ChatGPT tier — currently Plus, may need Pro for iteration/experimentation agent
 - Prompt versioning convention — not yet specified
 
 **Things Sid is NOT doing:**
@@ -377,12 +356,10 @@ CLAUDE.md is a Claude Code-specific file that provides persistent session contex
 If Sid pastes this document at the start of a new session, you have full context to:
 - Define remaining agent specs (product definition agent is next — use research agent spec as template)
 - Run targeted evals for unsettled capabilities
-- Publish eval posts (blog 2 + LinkedIn 2)
 - Run the architecture decision session for Titato
 - Build the PM OS orchestrator (design spec is substantially complete)
 - Write any outstanding artifacts (decision reversibility framework, adversarial triangulation spec, CLAUDE.md for the repo)
 - Continue any part of the Titato product build
-- Write blog posts 3 and 4
 - Update the architecture diagram for 7-agent structure with cycle types and sprint context
 
 Key files to reference:
