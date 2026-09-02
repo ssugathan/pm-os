@@ -22,6 +22,16 @@ from pmos.gate import (
 from pmos.state import AgentRunState, OrchestratorState, TaskState
 
 
+def _run_props(run_id: str, agent_name: str, **extra: Any) -> dict[str, Any]:
+    """Shared payload for run-scoped telemetry events.
+
+    Key order is part of the emitted payload (events are asserted as exact
+    sequences in tests), so the shared keys always come first and extras keep
+    their call-site order.
+    """
+    return {"run_id": run_id, "agent": agent_name, **extra}
+
+
 class Orchestrator:
     def __init__(self, base_dir: Path):
         self.base_dir = Path(base_dir)
@@ -54,11 +64,11 @@ class Orchestrator:
         start = time.monotonic()
         telemetry.event(
             "agent.dispatched",
-            {
-                "run_id": run_id,
-                "agent": agent.name,
-                "run_started_at_commit": orch_state.run_started_at_commit,
-            },
+            _run_props(
+                run_id,
+                agent.name,
+                run_started_at_commit=orch_state.run_started_at_commit,
+            ),
             base_dir=self.base_dir,
         )
 
@@ -67,12 +77,12 @@ class Orchestrator:
         except Exception as e:
             telemetry.event(
                 "agent.failed",
-                {
-                    "run_id": run_id,
-                    "agent": agent.name,
-                    "error_type": type(e).__name__,
-                    "duration_ms": int((time.monotonic() - start) * 1000),
-                },
+                _run_props(
+                    run_id,
+                    agent.name,
+                    error_type=type(e).__name__,
+                    duration_ms=int((time.monotonic() - start) * 1000),
+                ),
                 base_dir=self.base_dir,
             )
             raise
@@ -81,12 +91,12 @@ class Orchestrator:
         orch_state.save(self.base_dir)
         telemetry.event(
             "agent.completed",
-            {
-                "run_id": run_id,
-                "agent": agent.name,
-                "duration_ms": int((time.monotonic() - start) * 1000),
-                "sub_task_count": len(result.sub_tasks),
-            },
+            _run_props(
+                run_id,
+                agent.name,
+                duration_ms=int((time.monotonic() - start) * 1000),
+                sub_task_count=len(result.sub_tasks),
+            ),
             base_dir=self.base_dir,
         )
 
@@ -103,18 +113,18 @@ class Orchestrator:
     ) -> None:
         telemetry.event(
             "gate.presented",
-            {"run_id": state.run_id, "agent": agent_name},
+            _run_props(state.run_id, agent_name),
             base_dir=self.base_dir,
         )
         decision = handler.review(agent_name, state)
         telemetry.event(
             "gate.decided",
-            {
-                "run_id": state.run_id,
-                "agent": agent_name,
-                "outcome": decision.outcome.value,
-                "has_feedback": bool(decision.feedback),
-            },
+            _run_props(
+                state.run_id,
+                agent_name,
+                outcome=decision.outcome.value,
+                has_feedback=bool(decision.feedback),
+            ),
             base_dir=self.base_dir,
         )
         if decision.outcome == GateOutcome.REJECTED:

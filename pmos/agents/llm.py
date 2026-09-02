@@ -89,12 +89,7 @@ class LLMAgent(Agent):
         def on_retry(props: dict) -> None:
             telemetry.event(
                 "retry.attempted",
-                {
-                    "run_id": state.run_id,
-                    "agent": self.name,
-                    "sub_task": sub_task_name,
-                    **props,
-                },
+                self._telemetry_props(state, sub_task_name, **props),
                 base_dir=self.base_dir,
             )
 
@@ -106,17 +101,16 @@ class LLMAgent(Agent):
         )
         telemetry.event(
             "llm.call",
-            {
-                "run_id": state.run_id,
-                "agent": self.name,
-                "sub_task": sub_task_name,
-                "model": response.model,
-                "tokens_in": response.tokens_in,
-                "tokens_out": response.tokens_out,
-                "duration_ms": int((time.monotonic() - start) * 1000),
-                "prompt_sha": sha,
-                "prompt_dirty": dirty,
-            },
+            self._telemetry_props(
+                state,
+                sub_task_name,
+                model=response.model,
+                tokens_in=response.tokens_in,
+                tokens_out=response.tokens_out,
+                duration_ms=int((time.monotonic() - start) * 1000),
+                prompt_sha=sha,
+                prompt_dirty=dirty,
+            ),
             base_dir=self.base_dir,
         )
         return response

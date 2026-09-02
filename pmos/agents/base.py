@@ -62,6 +62,22 @@ class Agent:
     def sub_tasks(self) -> list[tuple[str, Callable[[AgentRunState], Any]]]:
         raise NotImplementedError
 
+    def _telemetry_props(
+        self, state: AgentRunState, sub_task_name: str, **extra: Any
+    ) -> dict[str, Any]:
+        """Shared payload for sub-task-scoped telemetry events.
+
+        Key order is part of the emitted payload (events are asserted as exact
+        sequences in tests), so the shared keys always come first and extras
+        keep their call-site order.
+        """
+        return {
+            "run_id": state.run_id,
+            "agent": self.name,
+            "sub_task": sub_task_name,
+            **extra,
+        }
+
     def _execute_sub_task(
         self,
         state: AgentRunState,
@@ -74,13 +90,12 @@ class Agent:
         sub_start = time.monotonic()
         telemetry.event(
             "sub_task.started",
-            {
-                "run_id": state.run_id,
-                "agent": self.name,
-                "sub_task": sub_task_name,
-                "prompt_sha": record.prompt_sha,
-                "prompt_dirty": record.prompt_dirty,
-            },
+            self._telemetry_props(
+                state,
+                sub_task_name,
+                prompt_sha=record.prompt_sha,
+                prompt_dirty=record.prompt_dirty,
+            ),
             base_dir=self.base_dir,
         )
 
@@ -96,13 +111,12 @@ class Agent:
                 state.save(self.base_dir)
                 telemetry.event(
                     "sub_task.failed",
-                    {
-                        "run_id": state.run_id,
-                        "agent": self.name,
-                        "sub_task": sub_task_name,
-                        "error_type": type(e).__name__,
-                        "duration_ms": int((time.monotonic() - sub_start) * 1000),
-                    },
+                    self._telemetry_props(
+                        state,
+                        sub_task_name,
+                        error_type=type(e).__name__,
+                        duration_ms=int((time.monotonic() - sub_start) * 1000),
+                    ),
                     base_dir=self.base_dir,
                 )
                 raise
@@ -117,13 +131,12 @@ class Agent:
                 attempts_remaining -= 1
                 telemetry.event(
                     "validation.retry_triggered",
-                    {
-                        "run_id": state.run_id,
-                        "agent": self.name,
-                        "sub_task": sub_task_name,
-                        "failed_checks": [r.check_name for r in report.failed_checks()],
-                        "attempts_remaining": attempts_remaining,
-                    },
+                    self._telemetry_props(
+                        state,
+                        sub_task_name,
+                        failed_checks=[r.check_name for r in report.failed_checks()],
+                        attempts_remaining=attempts_remaining,
+                    ),
                     base_dir=self.base_dir,
                 )
                 state.save(self.base_dir)
@@ -136,13 +149,12 @@ class Agent:
             state.save(self.base_dir)
             telemetry.event(
                 "sub_task.failed",
-                {
-                    "run_id": state.run_id,
-                    "agent": self.name,
-                    "sub_task": sub_task_name,
-                    "error_type": "ValidationFailed",
-                    "duration_ms": int((time.monotonic() - sub_start) * 1000),
-                },
+                self._telemetry_props(
+                    state,
+                    sub_task_name,
+                    error_type="ValidationFailed",
+                    duration_ms=int((time.monotonic() - sub_start) * 1000),
+                ),
                 base_dir=self.base_dir,
             )
             raise ValidationFailed(report)
@@ -152,12 +164,11 @@ class Agent:
         state.save(self.base_dir)
         telemetry.event(
             "sub_task.completed",
-            {
-                "run_id": state.run_id,
-                "agent": self.name,
-                "sub_task": sub_task_name,
-                "duration_ms": int((time.monotonic() - sub_start) * 1000),
-            },
+            self._telemetry_props(
+                state,
+                sub_task_name,
+                duration_ms=int((time.monotonic() - sub_start) * 1000),
+            ),
             base_dir=self.base_dir,
         )
 
