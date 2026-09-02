@@ -3,27 +3,30 @@
 Multi-agent orchestrator for end-to-end product workflow. 7 agents: research, product definition, design, planning, dev & QA, deployment, feedback.
 
 ## Repo structure
-- `_system/orchestrator/` — orchestrator code and design spec
+- `pmos/` — orchestrator code (state, dispatch, telemetry, config, prompts, adapters, agents, retry, gate, judgment, validation)
+- `tests/` — test suite (`pytest`)
 - `_system/orchestrator/design.md` — READ THIS for full architecture (context model, crash recovery, validation, error handling, cycle types)
+- `_system/orchestrator/default_config.yaml` — config defaults; runtime state files also land under `_system/`
+- `_system/model-eval/` — model selection eval notes and benchmark mapping
 - `_system/prompt-templates/` — reusable prompt templates per agent
 - `products/titato/` — Titato app product artifacts
 - `products/titato/context/project-context.md` — compact project context, every agent reads first
 
 ## Key concepts
 - Agents are Python modules, not 1:1 with an LLM. Each agent has sub-tasks that may call different models.
-- Models allocated per sub-task based on capability eval scores (see pm-os-build/model-eval/).
+- Models allocated per sub-task based on capability eval scores (see `_system/model-eval/`).
 - Three context layers: project-context.md (persistent), sprint-context.md (per-sprint), orchestrator state (transactional).
-- Agent state files: one JSON per agent per run, async writes, atomic rename via temp file.
-- Config-driven judgment points: each decision point is automated or collaborative per config.yaml.
+- Agent state files: one JSON per agent per run, written synchronously at each transition, atomic rename via temp file.
+- Config-driven judgment points: each decision point is automated or collaborative. Modes are currently passed to agents in code; yaml wiring is pending.
 
 ## Conventions
 - Artifacts are structured markdown
 - Config in yaml, state in json, artifacts in md
-- Git commit after every agent completion
+- Git commit after every agent completion (design convention — not yet automated by the orchestrator)
 - Agent outputs go to known locations in the product folder (see design.md "Agent output conventions")
 
 ## Build artifacts live elsewhere
-Design specs, eval docs, blog drafts, and session context live in the pm-os-build repo, not here. This repo is runtime only.
+Blog drafts, personal/session context, and agent specs live in the pm-os-build repo. This repo keeps the runtime, its design spec (`_system/orchestrator/design.md`), the model-eval docs (`_system/model-eval/`), and `session-handoff.md` as the cross-session status ledger.
 
 ## Cloud sync
 This repo moves between my Mac and Claude Code on the web, with GitHub as the source of truth. Keep the remote current.
