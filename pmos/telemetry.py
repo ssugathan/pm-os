@@ -47,15 +47,11 @@ def event(
 
 
 def _emit(payload: dict, *, base_dir: Path | None = None) -> None:
-    backend = os.environ.get("PMOS_TELEMETRY_BACKEND", "jsonl")
-    if backend == "jsonl":
-        _emit_jsonl(payload, base_dir=base_dir)
-    elif backend == "posthog":
-        # v2: PostHog client goes here. Until then, fall through to jsonl rather
-        # than silently dropping events.
-        _emit_jsonl(payload, base_dir=base_dir)
-    else:
-        _emit_jsonl(payload, base_dir=base_dir)
+    # jsonl is the only backend so far. When PMOS_TELEMETRY_BACKEND selects the
+    # (not yet wired) posthog backend, or anything unknown, fall through to
+    # jsonl rather than silently dropping events. v2: dispatch on the env var
+    # once a PostHog client exists.
+    _emit_jsonl(payload, base_dir=base_dir)
 
 
 def _emit_jsonl(payload: dict, *, base_dir: Path | None = None) -> None:
