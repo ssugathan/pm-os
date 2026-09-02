@@ -2,20 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from pmos.agents.noop import NoOpAgent
 from pmos.orchestrator import Orchestrator
 from pmos.state import OrchestratorState, SubTaskStatus, TaskState
 
-
-def read_events(base_dir: Path) -> list[dict]:
-    path = base_dir / "_system" / "telemetry" / "events.jsonl"
-    if not path.exists():
-        return []
-    with open(path) as f:
-        return [json.loads(line) for line in f if line.strip()]
+from tests.conftest import read_events
 
 
 def test_noop_dispatch_end_to_end(tmp_path: Path):

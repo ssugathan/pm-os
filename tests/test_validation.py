@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -20,13 +19,7 @@ from pmos.validation import (
     under_word_count,
 )
 
-
-def _read_events(base_dir: Path) -> list[dict]:
-    path = base_dir / "_system" / "telemetry" / "events.jsonl"
-    if not path.exists():
-        return []
-    with open(path) as f:
-        return [json.loads(line) for line in f if line.strip()]
+from tests.conftest import read_events
 
 
 # ---------- ValidationReport ----------
@@ -169,7 +162,7 @@ def test_sub_task_retries_until_validation_passes(tmp_path: Path):
     assert record.validation["overall_passed"] is True
     assert record.output["count"] == 2
 
-    events = _read_events(tmp_path)
+    events = read_events(tmp_path)
     retries = [e for e in events if e["event"] == "validation.retry_triggered"]
     assert len(retries) == 1
 
@@ -204,7 +197,7 @@ def test_sub_task_failed_event_emitted_with_validation_error_type(tmp_path: Path
     with pytest.raises(ValidationFailed):
         orch.dispatch(agent, run_id="v4", inputs={})
 
-    events = _read_events(tmp_path)
+    events = read_events(tmp_path)
     failed = next(e for e in events if e["event"] == "sub_task.failed")
     assert failed["properties"]["error_type"] == "ValidationFailed"
 

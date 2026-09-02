@@ -2,18 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from pmos import telemetry
 
-
-def read_events(base_dir: Path) -> list[dict]:
-    path = base_dir / "_system" / "telemetry" / "events.jsonl"
-    if not path.exists():
-        return []
-    with open(path) as f:
-        return [json.loads(line) for line in f if line.strip()]
+from tests.conftest import read_events
 
 
 def test_event_writes_jsonl_line(tmp_path: Path):

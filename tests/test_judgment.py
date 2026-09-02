@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -16,13 +15,7 @@ from pmos.judgment import (
 )
 from pmos.state import AgentRunState
 
-
-def _read_events(base_dir: Path) -> list[dict]:
-    path = base_dir / "_system" / "telemetry" / "events.jsonl"
-    if not path.exists():
-        return []
-    with open(path) as f:
-        return [json.loads(line) for line in f if line.strip()]
+from tests.conftest import read_events
 
 
 # ---------- record serialization ----------
@@ -163,7 +156,7 @@ def test_judgment_emits_telemetry_event(tmp_path: Path):
         ["a", "b"],
         automated_decider=lambda: ("a", "first"),
     )
-    events = _read_events(tmp_path)
+    events = read_events(tmp_path)
     fires = [e for e in events if e["event"] == "judgment.fired"]
     assert len(fires) == 1
     assert fires[0]["properties"]["judgment_name"] == "J1"

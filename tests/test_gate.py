@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -18,13 +17,7 @@ from pmos.gate import (
 from pmos.orchestrator import Orchestrator
 from pmos.state import AgentRunState, TaskState
 
-
-def _read_events(base_dir: Path) -> list[dict]:
-    path = base_dir / "_system" / "telemetry" / "events.jsonl"
-    if not path.exists():
-        return []
-    with open(path) as f:
-        return [json.loads(line) for line in f if line.strip()]
+from tests.conftest import read_events
 
 
 class _RejectHandler:
@@ -73,7 +66,7 @@ def test_dispatch_without_gate_handler_behaves_as_before(tmp_path: Path):
     result = orch.dispatch(agent, run_id="g0", inputs={})
     assert result.task_state == TaskState.COMPLETE
     # No gate events
-    events = _read_events(tmp_path)
+    events = read_events(tmp_path)
     assert not any(e["event"].startswith("gate.") for e in events)
 
 
@@ -87,7 +80,7 @@ def test_dispatch_with_approve_handler_returns_result_and_emits_telemetry(tmp_pa
     assert result.task_state == TaskState.COMPLETE
     assert handler.calls == [("noop", "g1")]
 
-    events = _read_events(tmp_path)
+    events = read_events(tmp_path)
     gate_events = [e for e in events if e["event"].startswith("gate.")]
     names = [e["event"] for e in gate_events]
     assert "gate.presented" in names
@@ -104,7 +97,7 @@ def test_dispatch_with_reject_handler_raises_gate_rejected(tmp_path: Path):
     with pytest.raises(GateRejected, match="noop run rejected"):
         orch.dispatch(agent, run_id="g2", inputs={}, gate_handler=_RejectHandler())
 
-    events = _read_events(tmp_path)
+    events = read_events(tmp_path)
     decided = next(e for e in events if e["event"] == "gate.decided")
     assert decided["properties"]["outcome"] == "rejected"
 
@@ -123,7 +116,7 @@ def test_dispatch_with_modify_handler_raises_with_feedback(tmp_path: Path):
 
     assert exc_info.value.feedback == "be more specific"
 
-    events = _read_events(tmp_path)
+    events = read_events(tmp_path)
     decided = next(e for e in events if e["event"] == "gate.decided")
     assert decided["properties"]["outcome"] == "modify_requested"
     assert decided["properties"]["has_feedback"] is True
@@ -139,5 +132,5 @@ def test_gate_does_not_fire_when_agent_run_fails(tmp_path: Path):
         orch.dispatch(crashing_agent, run_id="g4", inputs={}, gate_handler=handler)
 
     assert handler.calls == []  # never invoked
-    events = _read_events(tmp_path)
+    events = read_events(tmp_path)
     assert not any(e["event"].startswith("gate.") for e in events)

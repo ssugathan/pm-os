@@ -10,9 +10,9 @@ Verifies:
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,6 +23,7 @@ from pmos.agents.smoke import SmokeAgent
 from pmos.config import Config, PromptVersioningConfig
 from pmos.orchestrator import Orchestrator
 from pmos.state import SubTaskStatus, TaskState
+from tests.conftest import read_events
 
 
 def _make_mock_adapter(text: str = "pong", model: str = "claude-sonnet-4-6"):
@@ -50,14 +51,6 @@ def _seed_smoke_template(base_dir: Path) -> Path:
         "ping",
         "---\nagent: smoke\nsub_task: ping\nmodel: claude\n---\n\nRespond with pong",
     )
-
-
-def _read_events(base_dir: Path) -> list[dict]:
-    path = base_dir / "_system" / "telemetry" / "events.jsonl"
-    if not path.exists():
-        return []
-    with open(path) as f:
-        return [json.loads(line) for line in f if line.strip()]
 
 
 def test_smoke_dispatch_calls_adapter_with_assembled_prompt(tmp_path: Path):
@@ -164,7 +157,7 @@ def test_llm_call_telemetry_event_emitted(tmp_path: Path):
     orch = Orchestrator(tmp_path)
     orch.dispatch(agent, run_id="s5", inputs={})
 
-    events = _read_events(tmp_path)
+    events = read_events(tmp_path)
     llm_calls = [e for e in events if e["event"] == "llm.call"]
     assert len(llm_calls) == 1
 
@@ -231,7 +224,7 @@ def test_adapter_transient_then_success_retries_and_records_telemetry(
     assert result.task_state == TaskState.COMPLETE
     assert adapter.call.call_count == 2
 
-    events = _read_events(tmp_path)
+    events = read_events(tmp_path)
     retries = [e for e in events if e["event"] == "retry.attempted"]
     assert len(retries) == 1
     assert retries[0]["properties"]["error_type"] == "transient"
@@ -259,7 +252,7 @@ def test_adapter_quota_propagates_without_retry(tmp_path: Path, no_sleep):
         orch.dispatch(agent, run_id="r2", inputs={})
 
     assert adapter.call.call_count == 1  # no retry on quota
-    events = _read_events(tmp_path)
+    events = read_events(tmp_path)
     retries = [e for e in events if e["event"] == "retry.attempted"]
     assert len(retries) == 1
     assert retries[0]["properties"]["error_type"] == "quota"
