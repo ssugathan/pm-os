@@ -41,6 +41,7 @@ class SubTaskRecord:
     prompt_dirty: bool = False
     output: Any = None
     error: str | None = None
+    validation: dict[str, Any] | None = None  # last ValidationReport.to_dict()
 
 
 @dataclass
@@ -52,6 +53,7 @@ class AgentRunState:
     task_state: TaskState = TaskState.QUEUED
     sub_tasks: list[SubTaskRecord] = field(default_factory=list)
     inputs: dict[str, Any] = field(default_factory=dict)
+    judgment_log: list[dict[str, Any]] = field(default_factory=list)
     started_at: str = ""
     updated_at: str = ""
 
@@ -68,10 +70,12 @@ class AgentRunState:
                     "prompt_dirty": st.prompt_dirty,
                     "output": st.output,
                     "error": st.error,
+                    "validation": st.validation,
                 }
                 for st in self.sub_tasks
             ],
             "inputs": self.inputs,
+            "judgment_log": self.judgment_log,
             "started_at": self.started_at,
             "updated_at": self.updated_at,
         }
@@ -90,10 +94,12 @@ class AgentRunState:
                     prompt_dirty=st.get("prompt_dirty", False),
                     output=st.get("output"),
                     error=st.get("error"),
+                    validation=st.get("validation"),
                 )
                 for st in data.get("sub_tasks", [])
             ],
             inputs=data.get("inputs", {}),
+            judgment_log=data.get("judgment_log", []),
             started_at=data.get("started_at", ""),
             updated_at=data.get("updated_at", ""),
         )

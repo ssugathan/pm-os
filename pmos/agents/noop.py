@@ -18,8 +18,8 @@ from pmos.state import AgentRunState, now_iso
 class NoOpAgent(Agent):
     name = "noop"
 
-    def __init__(self, base_dir: Path, crash_at: str | None = None):
-        super().__init__(base_dir)
+    def __init__(self, base_dir: Path, crash_at: str | None = None, **kwargs):
+        super().__init__(base_dir, **kwargs)
         self.crash_at = crash_at
 
     def sub_tasks(self) -> list[tuple[str, Callable[[AgentRunState], Any]]]:

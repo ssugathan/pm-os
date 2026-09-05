@@ -1,7 +1,37 @@
-# session-handoff.md
-_Context document for continuing this work in a new Claude session._
-_Paste this file at the start of a new conversation to restore full context._
-_Last updated: April 12, 2026_
+# PROGRESS.md — PM OS status ledger
+_Read at session start per AGENTS.md → Project state. Update before every push._
+_Last updated: September 5, 2026_
+
+---
+
+## CURRENT STATE (live ledger — read first)
+_The narrative sections below are background/design context (last revised April 12). This block is the authoritative status; git is authoritative for "done."_
+
+### Status
+**Phase 1 orchestrator build — complete on branch `build/phase-1-orchestrator`** (current with origin, not yet PR'd/merged; ~102 passing tests). Built end-to-end:
+- Walking skeleton: state machine, dispatch, crash recovery
+- Telemetry: metadata-only event stream (PostHog-shaped)
+- Config loading: dataclasses + default yaml + deep-merge overrides
+- Prompt assembly + Claude adapter foundation
+- LLMAgent + SmokeAgent wiring — full LLM call path end-to-end
+- Retry wrapper: exp backoff for transient, no retry for quota
+- Gate flow: optional post-agent handler with telemetry
+- Judgment point system: modes, handlers, decision log
+- Output validation: structural + content framework with retry
+
+Deferred to Phase 2: Stop hook + TDD pre-write hook (built alongside Dev & QA). Pre-orchestrator design/eval work (agent architecture, model eval, research agent spec) remains done — see below.
+
+### Next up
+1. Merge the open PR: `refactor/safe-pass-v2` → main (contains the full Phase 1 branch plus the Sep 2 safe refactor: redacted ledger, README, doc reconciliation, conftest dedupe, telemetry cleanup, py3.11 floor).
+2. Build Phase 2: Dev & QA agent (via existing LLMAgent + Stop hook framework); test on the Lego simulator in `qa_only` mode first.
+3. Spec + build Planning and Deployment agents (needed for Lego simulator sprints 2 & 3).
+4. Remaining agent specs: product definition, design, feedback.
+
+### Work log
+- 2026-09-05 — Multi-agent setup: AGENTS.md as canonical instructions, CLAUDE.md as import shim, this file renamed session-handoff.md → PROGRESS.md, .env.example added.
+- 2026-09-02 — refactor/safe-pass-v2 (8 commits on the Phase 1 branch): personal context redacted from this ledger, accurate Phase 1 README added, CLAUDE.md reconciled, telemetry/test cleanup. 102/102 tests green.
+- 2026-06-02 — Added cloud-sync + project-state workflow to CLAUDE.md; reconciled this handoff with the Phase 1 orchestrator build (commits May 31–Jun 2). Repo wired for Mac ⇄ web sync.
+- 2026-05-31 → 06-02 — Phase 1 orchestrator: skeleton, telemetry, config, prompts+Claude adapter, LLMAgent wiring, retry, gate flow, judgment points, output validation.
 
 ---
 

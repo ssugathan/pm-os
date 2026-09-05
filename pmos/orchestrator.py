@@ -13,14 +13,37 @@ from typing import Any
 
 from pmos import telemetry
 from pmos.agents.base import Agent
+from pmos.gate import (
+    GateHandler,
+    GateModifyRequested,
+    GateOutcome,
+    GateRejected,
+)
 from pmos.state import AgentRunState, OrchestratorState, TaskState
+
+
+def _run_props(run_id: str, agent_name: str, **extra: Any) -> dict[str, Any]:
+    """Shared payload for run-scoped telemetry events.
+
+    Key order is part of the emitted payload (events are asserted as exact
+    sequences in tests), so the shared keys always come first and extras keep
+    their call-site order.
+    """
+    return {"run_id": run_id, "agent": agent_name, **extra}
 
 
 class Orchestrator:
     def __init__(self, base_dir: Path):
         self.base_dir = Path(base_dir)
 
-    def dispatch(self, agent: Agent, run_id: str, inputs: dict[str, Any]) -> AgentRunState:
+    def dispatch(
+        self,
+        agent: Agent,
+        run_id: str,
+        inputs: dict[str, Any],
+        *,
+        gate_handler: GateHandler | None = None,
+    ) -> AgentRunState:
         """Dispatch an agent for a fresh run.
 
         If state already exists for (agent.name, run_id), the agent's run loop
@@ -28,6 +51,10 @@ class Orchestrator:
         `recover()` for explicit resume — the difference is that `recover()`
         loads inputs from the existing state file, while `dispatch()` takes
         them from the caller.
+
+        When `gate_handler` is provided, it's invoked after a successful agent
+        run. Raises `GateRejected` on reject or `GateModifyRequested` on modify
+        so the caller decides how to act (re-dispatch with feedback, abort, etc.).
         """
         orch_state = self._load_or_init_state(run_id)
         orch_state.active_agent = agent.name
@@ -37,11 +64,11 @@ class Orchestrator:
         start = time.monotonic()
         telemetry.event(
             "agent.dispatched",
-            {
-                "run_id": run_id,
-                "agent": agent.name,
-                "run_started_at_commit": orch_state.run_started_at_commit,
-            },
+            _run_props(
+                run_id,
+                agent.name,
+                run_started_at_commit=orch_state.run_started_at_commit,
+            ),
             base_dir=self.base_dir,
         )
 
@@ -50,12 +77,12 @@ class Orchestrator:
         except Exception as e:
             telemetry.event(
                 "agent.failed",
-                {
-                    "run_id": run_id,
-                    "agent": agent.name,
-                    "error_type": type(e).__name__,
-                    "duration_ms": int((time.monotonic() - start) * 1000),
-                },
+                _run_props(
+                    run_id,
+                    agent.name,
+                    error_type=type(e).__name__,
+                    duration_ms=int((time.monotonic() - start) * 1000),
+                ),
                 base_dir=self.base_dir,
             )
             raise
@@ -64,15 +91,46 @@ class Orchestrator:
         orch_state.save(self.base_dir)
         telemetry.event(
             "agent.completed",
-            {
-                "run_id": run_id,
-                "agent": agent.name,
-                "duration_ms": int((time.monotonic() - start) * 1000),
-                "sub_task_count": len(result.sub_tasks),
-            },
+            _run_props(
+                run_id,
+                agent.name,
+                duration_ms=int((time.monotonic() - start) * 1000),
+                sub_task_count=len(result.sub_tasks),
+            ),
             base_dir=self.base_dir,
         )
+
+        if gate_handler is not None:
+            self._run_gate(gate_handler, agent.name, result)
+
         return result
+
+    def _run_gate(
+        self,
+        handler: GateHandler,
+        agent_name: str,
+        state: AgentRunState,
+    ) -> None:
+        telemetry.event(
+            "gate.presented",
+            _run_props(state.run_id, agent_name),
+            base_dir=self.base_dir,
+        )
+        decision = handler.review(agent_name, state)
+        telemetry.event(
+            "gate.decided",
+            _run_props(
+                state.run_id,
+                agent_name,
+                outcome=decision.outcome.value,
+                has_feedback=bool(decision.feedback),
+            ),
+            base_dir=self.base_dir,
+        )
+        if decision.outcome == GateOutcome.REJECTED:
+            raise GateRejected(f"{agent_name} run rejected at gate")
+        if decision.outcome == GateOutcome.MODIFY_REQUESTED:
+            raise GateModifyRequested(decision.feedback)
 
     def recover(self, agent: Agent, run_id: str) -> AgentRunState:
         """Resume an interrupted agent run. Loads inputs from the existing state file."""
