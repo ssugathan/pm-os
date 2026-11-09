@@ -514,6 +514,8 @@ Every agent action emits a telemetry event via `pmos.telemetry.event(name, prope
 
 **Implementation:** v1 backend appends fsynced jsonl to `_system/telemetry/events.jsonl`. Payload shape matches PostHog's `capture` format (`event` / `distinct_id` / `properties`) so the v2 backend swap is a one-file change with no call-site impact. The owner using PM OS is the first live "user" — the telemetry stream is the audit trail for tuning the system based on real usage before any third-party deployment.
 
+**Best-effort, never fatal.** Telemetry is an audit trail, not the source of truth. A failed telemetry write (full disk, bad path, backend error) prints a warning to stderr and drops that event; it never aborts a run and never replaces the exception of a failing sub-task or agent being recorded. Events are not retried or buffered, so the log can have gaps; agent state files remain complete.
+
 **Discipline: metadata only.** Telemetry tracks names, counts, durations, models, prompt SHAs, and error *types*. It never tracks prompt contents, agent outputs, or any artifact body — those stay in the agent state file (source of truth, local).
 
 The log serves three purposes: audit trail for debugging, recoverable context if the state file is corrupted, and a feedback signal for tuning model allocation, judgment-point modes, and gate placement based on observed usage.
