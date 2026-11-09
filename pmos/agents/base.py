@@ -162,6 +162,7 @@ class Agent:
 
         record.status = SubTaskStatus.COMPLETE
         record.output = output
+        record.error = None  # a prior failed attempt's error no longer applies
         state.save(self.base_dir)
         telemetry.event(
             "sub_task.completed",

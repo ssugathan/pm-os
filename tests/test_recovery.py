@@ -97,3 +97,18 @@ def test_telemetry_captures_crash_and_recovery_history(tmp_path: Path):
     assert count("agent.dispatched") == 2
     assert count("agent.failed") == 1
     assert count("agent.completed") == 1
+
+
+def test_recovered_sub_task_clears_stale_error(tmp_path: Path):
+    """Known bug b1: a sub-task that failed and then succeeded on resume must
+    not keep the old error string next to status COMPLETE."""
+    orch = Orchestrator(tmp_path)
+    with pytest.raises(RuntimeError):
+        orch.dispatch(NoOpAgent(tmp_path, crash_at="work"), run_id="r1", inputs={})
+    assert AgentRunState.load(tmp_path, "noop", "r1").sub_tasks[1].error
+
+    orch.recover(NoOpAgent(tmp_path), run_id="r1")
+
+    work = AgentRunState.load(tmp_path, "noop", "r1").sub_tasks[1]
+    assert work.status == SubTaskStatus.COMPLETE
+    assert work.error is None
