@@ -58,7 +58,7 @@ def test_orchestrator_state_roundtrip(tmp_path: Path):
     )
     state.save(tmp_path)
 
-    loaded = OrchestratorState.load(tmp_path)
+    loaded = OrchestratorState.load(tmp_path, "r1")
     assert loaded.run_id == "r1"
     assert loaded.run_started_at_commit == "def456"
     assert loaded.active_agent == "research"
@@ -101,5 +101,5 @@ def test_agent_state_file_lands_in_expected_location(tmp_path: Path):
 def test_orchestrator_state_file_lands_in_expected_location(tmp_path: Path):
     state = OrchestratorState(run_id="r1")
     state.save(tmp_path)
-    expected = tmp_path / "_system" / "orchestrator" / "current-state.json"
+    expected = tmp_path / "_system" / "orchestrator" / "runs" / "r1.json"
     assert expected.exists()

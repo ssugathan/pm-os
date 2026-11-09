@@ -19,7 +19,15 @@ from pmos.gate import (
     GateOutcome,
     GateRejected,
 )
-from pmos.state import AgentRunState, OrchestratorState, TaskState
+from pmos.state import (
+    AgentRunState,
+    OrchestratorState,
+    TaskState,
+    atomic_write_json,
+    legacy_orchestrator_state_path,
+    orchestrator_state_path,
+    read_json,
+)
 
 
 def _run_props(run_id: str, agent_name: str, **extra: Any) -> dict[str, Any]:
@@ -138,13 +146,39 @@ class Orchestrator:
         return self.dispatch(agent, run_id, existing.inputs)
 
     def _load_or_init_state(self, run_id: str) -> OrchestratorState:
+        """Load this run's orchestrator state, or start a new one.
+
+        State is keyed per run_id, so another run's state is never returned.
+        A legacy single-file `current-state.json` is migrated only if it
+        belongs to this run_id; otherwise it is left untouched.
+        """
         try:
-            return OrchestratorState.load(self.base_dir)
+            return OrchestratorState.load(self.base_dir, run_id)
         except FileNotFoundError:
-            return OrchestratorState(
-                run_id=run_id,
-                run_started_at_commit=self._git_head_sha(),
-            )
+            pass
+
+        legacy = self._migrate_legacy_state(run_id)
+        if legacy is not None:
+            return legacy
+
+        return OrchestratorState(
+            run_id=run_id,
+            run_started_at_commit=self._git_head_sha(),
+        )
+
+    def _migrate_legacy_state(self, run_id: str) -> OrchestratorState | None:
+        path = legacy_orchestrator_state_path(self.base_dir)
+        try:
+            legacy = OrchestratorState.from_dict(read_json(path))
+        except FileNotFoundError:
+            return None
+        if legacy.run_id != run_id:
+            return None
+        # Write the per-run file first, then drop the legacy one, so a crash
+        # between the two steps leaves the state readable either way.
+        atomic_write_json(orchestrator_state_path(self.base_dir, run_id), legacy.to_dict())
+        path.unlink()
+        return legacy
 
     def _git_head_sha(self) -> str:
         try:

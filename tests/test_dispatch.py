@@ -32,7 +32,7 @@ def test_orchestrator_state_written_on_dispatch(tmp_path: Path):
 
     orch.dispatch(agent, run_id="r2", inputs={})
 
-    state = OrchestratorState.load(tmp_path)
+    state = OrchestratorState.load(tmp_path, "r2")
     assert state.run_id == "r2"
     assert state.active_agent == "noop"
     assert state.active_task_state == TaskState.COMPLETE

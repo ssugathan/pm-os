@@ -11,6 +11,9 @@ Discipline: METADATA ONLY. Track names, counts, durations, models, prompt SHAs,
 error types. Never track prompt contents, agent outputs, or any artifact body.
 That stays in the agent state file (source of truth, local).
 
+Failure handling: `event()` never raises. A failed write prints one warning
+line to stderr and the event is dropped (not retried or buffered).
+
 Environment overrides:
 - PMOS_TELEMETRY_PATH — full path to the events log (default: <base_dir>/_system/telemetry/events.jsonl)
 - PMOS_DISTINCT_ID — distinct_id for PostHog forward-compat (default: pm_os_user)
@@ -21,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -34,16 +38,28 @@ def event(
     *,
     base_dir: Path | None = None,
 ) -> None:
-    """Record a telemetry event. Metadata only — never include content."""
-    payload = {
-        "event": name,
-        "distinct_id": os.environ.get("PMOS_DISTINCT_ID", _DEFAULT_DISTINCT_ID),
-        "properties": {
-            "timestamp": datetime.now(UTC).isoformat(),
-            **(properties or {}),
-        },
-    }
-    _emit(payload, base_dir=base_dir)
+    """Record a telemetry event. Metadata only — never include content.
+
+    Best-effort: telemetry is an audit trail, not the source of truth (agent
+    state files are). Any failure to build or write the event is reported on
+    stderr and swallowed, so it can never abort a run or replace the exception
+    of a failing sub-task or agent that is being recorded.
+    """
+    try:
+        payload = {
+            "event": name,
+            "distinct_id": os.environ.get("PMOS_DISTINCT_ID", _DEFAULT_DISTINCT_ID),
+            "properties": {
+                "timestamp": datetime.now(UTC).isoformat(),
+                **(properties or {}),
+            },
+        }
+        _emit(payload, base_dir=base_dir)
+    except Exception as e:  # deliberately broad, see docstring
+        print(
+            f"pmos telemetry: dropped event {name!r} ({type(e).__name__}: {e})",
+            file=sys.stderr,
+        )
 
 
 def _emit(payload: dict, *, base_dir: Path | None = None) -> None:

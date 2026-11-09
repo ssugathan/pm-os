@@ -306,7 +306,9 @@ Before each run begins, the orchestrator presents the planned tasks and their de
 
 ### Transactional state file
 
-The orchestrator writes a state file to disk at every state transition. Location: `_system/orchestrator/current-state.json`
+The orchestrator writes a state file to disk at every state transition. State is keyed per run: each pipeline run has its own file at `_system/orchestrator/runs/[run-id].json`, mirroring the per-run agent state files. Resuming one run reads and writes only that run's file, so it can never pick up or overwrite another run's run ID or `run_started_at_commit`.
+
+**Legacy single-file state.** Earlier builds kept one shared `_system/orchestrator/current-state.json`. On load, if a run has no per-run file and the legacy file belongs to that same run ID, it is migrated (written to the per-run path, then deleted). A legacy file for a different run ID is ignored and left in place.
 
 The state file captures:
 - Current pipeline run ID
@@ -331,7 +333,7 @@ This means:
 
 ### Restart behavior
 
-On restart, the orchestrator reads `current-state.json` and determines where to resume:
+On restart, the caller names the run to resume (`recover(agent, run_id)`); the orchestrator reads that run's state file and determines where to resume. There is no "latest run" pointer: picking which run to resume is the caller's decision.
 
 | State at crash | Restart behavior |
 |---------------|-----------------|
@@ -350,8 +352,8 @@ For tasks that are not naturally idempotent (e.g., implementation tasks that mod
 
 The system has three state stores that can get out of sync during a crash:
 
-1. **Agent state file** (`agent-state/[agent]-[run-id].json`) — most granular. Updated async after each sub-task. Tracks exactly which sub-tasks completed, what they produced, and what judgment calls were made.
-2. **Orchestrator state file** (`current-state.json`) — tracks which agent is active and its high-level status (queued/running/review/complete).
+1. **Agent state file** (`agent-state/[agent]-[run-id].json`) — most granular. Written synchronously (atomic temp-file rename) at each sub-task transition. Tracks exactly which sub-tasks completed, what they produced, and what judgment calls were made.
+2. **Orchestrator state file** (`orchestrator/runs/[run-id].json`) — tracks which agent is active and its high-level status (queued/running/review/complete).
 3. **Artifact store + git** — the final outputs on disk. Git commit is the last step.
 
 **Source of truth hierarchy:** Agent state file > orchestrator state > disk/git.
@@ -391,7 +393,7 @@ Retry with exponential backoff:
 
 Maximum 5 retries per sub-task. If still failing after 5 retries, pause the agent and warn: "API unavailable after 5 attempts. Agent paused at sub-task N. Resume when ready."
 
-Agent state file is current (async writes after each sub-task) — nothing is lost on pause.
+Agent state file is current (synchronous writes at each sub-task transition) — nothing is lost on pause.
 
 ### Quota/limit errors (usage cap hit, billing issue)
 
@@ -511,6 +513,8 @@ Every agent action emits a telemetry event via `pmos.telemetry.event(name, prope
 - prompt_sha and prompt_dirty (for the sub-task-level events)
 
 **Implementation:** v1 backend appends fsynced jsonl to `_system/telemetry/events.jsonl`. Payload shape matches PostHog's `capture` format (`event` / `distinct_id` / `properties`) so the v2 backend swap is a one-file change with no call-site impact. The owner using PM OS is the first live "user" — the telemetry stream is the audit trail for tuning the system based on real usage before any third-party deployment.
+
+**Best-effort, never fatal.** Telemetry is an audit trail, not the source of truth. A failed telemetry write (full disk, bad path, backend error) prints a warning to stderr and drops that event; it never aborts a run and never replaces the exception of a failing sub-task or agent being recorded. Events are not retried or buffered, so the log can have gaps; agent state files remain complete.
 
 **Discipline: metadata only.** Telemetry tracks names, counts, durations, models, prompt SHAs, and error *types*. It never tracks prompt contents, agent outputs, or any artifact body — those stay in the agent state file (source of truth, local).
 

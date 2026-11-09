@@ -6,11 +6,16 @@ This repo is the runtime system plus product artifacts. Build-process material (
 
 ## What is implemented and tested (Phase 1)
 
-The orchestrator core, built bottom-up as a walking skeleton and extended module by module. 102 tests, all mocked, no API calls.
+The orchestrator core, built bottom-up as a walking skeleton and extended module by module. 117 tests, all mocked, no API calls.
 
-- **State machine and state files** (`pmos/state.py`): task states (queued/running/review/complete), per-agent-per-run JSON state files, orchestrator state file, atomic writes via temp file + rename.
-- **Dispatch and crash recovery** (`pmos/orchestrator.py`, `pmos/agents/base.py`): agents run ordered sub-tasks; re-running with the same run_id resumes idempotently from the first incomplete sub-task. `recover()` reloads inputs from the state file.
-- **Telemetry** (`pmos/telemetry.py`): metadata-only event stream, append-only fsynced JSONL, payload shaped like PostHog's capture format so a backend swap is a one-file change. Names, counts, durations, models, prompt SHAs, error types. Never prompt or output content.
+- **State machine and state files** (`pmos/state.py`): task states (queued/running/review/complete), per-agent-per-run JSON state files, per-run orchestrator state files (`_system/orchestrator/runs/<run_id>.json`; a legacy single `current-state.json` is migrated when its own run is next loaded), atomic writes via temp file + rename.
+- **Dispatch and crash recovery** (`pmos/orchestrator.py`, `pmos/agents/base.py`): agents run ordered sub-tasks; re-running with the same run_id resumes from the first incomplete sub-task, skipping completed ones, and a recovered sub-task's earlier error is cleared. `recover()` reloads inputs from the state file. Each run has its own orchestrator state, so resuming one run cannot read or overwrite another. Sub-task records are matched by name; if an agent's sub-task list changed since the run started, resume stops with `SubTaskDriftError` naming what was added, removed or reordered. Known limits:
+  - The caller must name the run to resume; nothing tracks which run was last active.
+  - Recovery is per sub-task: a sub-task interrupted mid-way re-runs from its start, so side effects it already made (files, API calls) can repeat.
+  - On an existing run, `dispatch()` uses the inputs stored in the agent state file; inputs passed by the caller are ignored.
+  - There is no migration for a changed sub-task list: a drifted run must be restarted under a new run_id.
+  - The design's disk-verification, re-write-from-state and post-agent git-commit recovery steps are not built, and there is no locking against two processes resuming the same run.
+- **Telemetry** (`pmos/telemetry.py`): metadata-only event stream, append-only fsynced JSONL, payload shaped like PostHog's capture format so a backend swap is a one-file change. Names, counts, durations, models, prompt SHAs, error types. Never prompt or output content. Best-effort: a failed write warns on stderr and drops the event (no retry or buffer), so it cannot abort a run or mask the original error, but the log can have gaps.
 - **Config loading** (`pmos/config.py`): typed dataclasses, defaults from `_system/orchestrator/default_config.yaml`, optional per-product overrides layered by deep merge. Note: context budgets are loaded but not yet enforced at dispatch (see below).
 - **Prompt assembly** (`pmos/prompts.py`): markdown templates with YAML frontmatter, assembly of the five prompt components from the spec (project context, sprint context, artifacts, task state, task instructions), and git-based prompt versioning: per-sub-task SHA capture at dispatch plus a dirty flag for uncommitted templates, with a strict mode that refuses to dispatch dirty templates.
 - **Claude adapter** (`pmos/adapters/`): `ModelAdapter` ABC with a uniform `Response` shape, plus a Claude implementation that classifies SDK errors into transient / quota / malformed. Claude is the only adapter so far.
@@ -70,6 +75,6 @@ pm-os/
     adapters/            ModelAdapter ABC + Claude adapter
     agents/              Agent base, LLMAgent, SmokeAgent, NoOpAgent
   products/titato/       product artifacts for the first product built with the system
-  tests/                 102 tests
+  tests/                 117 tests
   session-handoff.md     project status ledger for cross-session sync
 ```
