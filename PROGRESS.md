@@ -1,6 +1,6 @@
 # PROGRESS.md — PM OS status ledger
 _Read at session start per AGENTS.md → Project state. Update before every push._
-_Last updated: November 8, 2026_
+_Last updated: November 9, 2026_
 
 ---
 
@@ -8,9 +8,9 @@ _Last updated: November 8, 2026_
 _This block is the authoritative status. Git is authoritative for "done": merged to main = done; an open PR or working branch = in flight. The Background section below is design context._
 
 ### Status
-**Phase 1 orchestrator is merged to `main`.** In flight: `chore/ci-maintenance` (CI action bumps + Dependabot), PR open, not merged.
+**Phase 1 orchestrator is merged to `main`.** `chore/ci-maintenance` merged via PR #1 (2026-11-09). In flight: `fix/known-bugs-a-b-c` (fixes for known bugs a, b1, b2, c), PR open, not merged.
 
-**Repo re-created (observed 2026-11-09):** `main` is now a single commit, `4a7d027 Initial public release`, and PR numbering restarted (`chore/ci-maintenance` opened as PR #1). Its tree includes all the work below, including CI and hygiene from `chore/ci-and-lint` (merged 2026-11-08). The PR numbers in this ledger dated before 2026-11-09 refer to the previous repository, not to PRs in this one.
+**Repo re-created (owner-confirmed):** a fresh public repo was created on 2026-11-08 to drop the old history; the old history is archived privately in `pm-os-archive`. `main` started as a single commit, `4a7d027 Initial public release`, and PR numbering restarted (`chore/ci-maintenance` was PR #1). Its tree includes all the work below, including CI and hygiene from `chore/ci-and-lint` (merged 2026-11-08). The PR numbers in this ledger dated before 2026-11-09 refer to the previous repository, not to PRs in this one.
 
 - Phase 1 (built May 31 – Jun 2 on `build/phase-1-orchestrator`) plus the Sep 2 safe-refactor pass merged via PR #1 (`refactor/safe-pass-v2`) on 2026-09-05.
 - Cross-agent handoff rules merged via PR #2 (`docs/cross-agent-handoff`) on 2026-09-05.
@@ -21,7 +21,8 @@ _This block is the authoritative status. Git is authoritative for "done": merged
 
 What exists in code (`pmos/`), all covered by the mocked test suite:
 - State machine, per-agent-per-run state files, orchestrator state file, atomic writes (`pmos/state.py`)
-- Dispatch and crash recovery (`pmos/orchestrator.py`, `pmos/agents/base.py`)
+- Dispatch and crash recovery (`pmos/orchestrator.py`, `pmos/agents/base.py`); orchestrator state keyed per run (`_system/orchestrator/runs/<run_id>.json`), sub-task records matched by name on resume (`SubTaskDriftError` on drift) — on `fix/known-bugs-a-b-c`
+- Telemetry is best-effort: write failures warn on stderr and never abort a run — on `fix/known-bugs-a-b-c`
 - Telemetry: metadata-only, PostHog-shaped JSONL (`pmos/telemetry.py`)
 - Config: dataclasses + `_system/orchestrator/default_config.yaml` + deep-merge overrides (`pmos/config.py`)
 - Prompt assembly, git-based prompt SHA capture, strict mode for dirty templates (`pmos/prompts.py`, `pmos/agents/llm.py`)
@@ -31,26 +32,24 @@ What exists in code (`pmos/`), all covered by the mocked test suite:
 
 Not built: the 7 production agents, pipeline sequencing, cycle types, context-budget enforcement, LLM content validation, Gemini/GPT adapters, cross-resume retry accounting, PostHog backend. Full list in `README.md` → "Designed but not built". Stop hook + TDD pre-write hook are deferred to Phase 2 (built alongside Dev & QA).
 
+Verification state (2026-11-09, `fix/known-bugs-a-b-c`): `pytest` 117 passed and `ruff check .` clean in a fresh Python 3.11 venv; each bug's regression test was confirmed failing on `main` before its fix. CI result recorded on the PR.
+
 Verification state (2026-11-08):
 - `pytest`: 102 passed on a clean `pip install -e ".[dev]"` in a fresh Python 3.11 venv (anthropic 2.6.0, httpx 0.28.1) — on `main`.
 - `ruff check .`: clean with ruff pinned to 0.17.4 and an explicit rule `select` in `pyproject.toml` — on `main`.
 - CI: `.github/workflows/ci.yml` (job `lint-and-test`: Python 3.11, ruff, pytest; no keys, no network tests) — on `main`.
 
 ### Next up
-1. **Owner decision: git-history privacy cleanup** — appears done (repo re-created with a single-commit `main` on 2026-11-09); owner to confirm, then drop this item. Personal context was removed from this file on 2026-11-08 but remains in earlier commits of `PROGRESS.md` (and of `session-handoff.md` before the rename), and the repo is intended to be public. Decide whether to leave history as is or rewrite it (owner-only action; agents must not rewrite history). The other files flagged by the 2026-11-08 scan were cleaned in `chore/remove-personal-context`, so their earlier versions are also in history. Kept deliberately: `tests/test_telemetry.py:29,31` (`"sid"` as a test value), the blog URL at `README.md:41`, and the plan names in the eval's model list at `_system/model-eval/raw-evals.md:22-23`.
-2. **Enable "require status checks" on `main`** (owner-only, GitHub settings) using the `lint-and-test` check. CI and hygiene are merged.
-3. **Fix known bugs a/b/c** (see Known issues) with a regression test for each. Orchestrator state is to be keyed per run, so resuming an old run and starting a new one cannot collide.
-4. **Doc fixes.** README layout (still lists `session-handoff.md`; missing `AGENTS.md`, `PROGRESS.md`); `design.md` says agent-state writes are async/background-thread but the code (and AGENTS.md) is synchronous — update the doc to match; add crash-recovery caveats to README (single shared orchestrator state file, stale errors on resume, sub-task drift).
-5. Build Phase 2: Dev & QA agent on the existing `LLMAgent` + Stop hook framework; test on the Lego simulator in `qa_only` mode first.
-6. Spec + build Planning and Deployment agents (needed for Lego simulator sprints 2 & 3).
-7. Remaining agent specs: product definition, design, feedback.
-8. Titato app architecture decision (Option A / B / Hybrid) — `products/titato/architecture/options.md` is still a placeholder, so the options need writing up in this repo first.
+1. **Review and merge `fix/known-bugs-a-b-c`** (owner). Design choice to review: per-run orchestrator state files with one-time migration of a legacy `current-state.json` (see PR description).
+2. **Enable "require status checks" on `main`** (owner-only, GitHub settings) using the `lint-and-test` check.
+3. **Doc fixes.** README layout (still lists `session-handoff.md`; missing `AGENTS.md`, `PROGRESS.md`). Done on `fix/known-bugs-a-b-c`: design.md now says agent-state writes are synchronous; README states crash-recovery limits.
+4. Build Phase 2: Dev & QA agent on the existing `LLMAgent` + Stop hook framework; test on the Lego simulator in `qa_only` mode first.
+5. Spec + build Planning and Deployment agents (needed for Lego simulator sprints 2 & 3).
+6. Remaining agent specs: product definition, design, feedback.
+7. Titato app architecture decision (Option A / B / Hybrid) — `products/titato/architecture/options.md` is still a placeholder, so the options need writing up in this repo first.
 
-### Known issues (all reproduced on `main` at 98412be, 2026-11-08)
-- **a. Stale run_id.** `Orchestrator._load_or_init_state` (`pmos/orchestrator.py:140-147`) loads whatever `current-state.json` exists without checking `run_id`. Dispatching `run-2` after `run-1` leaves `run_id: run-1` and run-1's `run_started_at_commit`. Happens with a fresh `Orchestrator` instance too.
-- **b1. `record.error` not cleared on success.** `pmos/agents/base.py:162-164` marks the sub-task COMPLETE but keeps the old error string after a failed run is recovered.
-- **b2. Bare `zip(strict=True)` on sub-task drift.** `pmos/agents/base.py:257` raises an unexplained `ValueError` if the agent's sub-task list changes length between runs; names are never compared, so a reorder silently misaligns records.
-- **c. Telemetry failure kills the run.** `pmos/telemetry.py:57-63` has no error handling; an `OSError` on write aborts dispatch, leaving agent/orchestrator state RUNNING. A failure inside the error-path emits (`pmos/orchestrator.py:78`, `pmos/agents/base.py:112`) masks the original exception.
+### Known issues
+None open. Bugs a, b1, b2 and c (reproduced on `main` 2026-11-08) are fixed on `fix/known-bugs-a-b-c`, each with a regression test; see the Work log. Remaining crash-recovery limits (by design or not yet built) are listed in `README.md` → Dispatch and crash recovery.
 - ~~**Fresh install fails test collection.**~~ Fixed on `chore/ci-and-lint`: `httpx` is now a declared dev dependency (anthropic 2.x depends on `httpx2`, not `httpx`).
 
 ### Unverified / open
@@ -59,6 +58,7 @@ Verification state (2026-11-08):
 - The fresh-install `httpx` failure was observed with anthropic 2.6.0 only.
 
 ### Work log
+- 2026-11-09 — Known bugs fixed (`fix/known-bugs-a-b-c`, one commit each, regression test first and confirmed failing on `main`): **a** orchestrator state keyed per run (`_system/orchestrator/runs/<run_id>.json`), legacy `current-state.json` migrated only for its own run_id, otherwise left alone; **b1** `record.error` cleared when a sub-task completes; **b2** sub-task records matched by name, `SubTaskDriftError` lists added/removed/reordered/duplicate names and leaves state untouched; **c** `telemetry.event` never raises (warns on stderr, drops the event), so the original error propagates from the `sub_task.failed` / `agent.failed` paths. design.md (state location, restart, sync writes, telemetry contract) and README (crash-recovery limits) updated. Git-history cleanup closed: owner confirmed a fresh public repo (2026-11-08) with old history archived privately in `pm-os-archive`. Verified: `pytest` 117 passed, `ruff check .` clean (Python 3.11 venv).
 - 2026-11-09 — CI maintenance (`chore/ci-maintenance`): `actions/checkout` v4 → v7 and `actions/setup-python` v5 → v7 (latest majors; both declare `using: node24`), `runs-on` pinned to `ubuntu-24.04`; added `.github/dependabot.yml` (weekly, `github-actions` ecosystem only). Ledger reconciled with the 2026-11-09 re-creation of the repo (single-commit `main`; PR numbers restarted). Verified: `pytest` 102 passed, `ruff check .` clean; CI result recorded on the PR.
 - 2026-11-08 — CI and hygiene (`chore/ci-and-lint`): `httpx` declared as a dev dependency; ruff pinned to 0.17.4 with explicit `select` (E4/E7/E9/F baseline + I001, UP017, UP035, PLW1510 — exactly what 0.17.4 defaults reported); 18 lint errors fixed (16 by `ruff check --fix`, `check=False` on the two git `subprocess.run` calls in `pmos/prompts.py`); added `.github/workflows/ci.yml`; removed stale `.claude/commands/` references (CLAUDE.md, AGENTS.md, .gitignore); `Claude outputs/` gitignored. Verified in a fresh Python 3.11 venv: clean install, `ruff check .` green, 102 tests pass. Not adopted: broader UP/PLW families (would add UP042 `str, Enum` → `StrEnum`, an unsafe fix that changes `str()` output).
 - 2026-11-08 — Removed personal context outside PROGRESS.md (`chore/remove-personal-context`): neutral wording in Titato artifacts, eval notes, design.md and a telemetry comment; LinkedIn/blog planning removed from eval notes; deleted the three `.claude/commands/` files (they depended on the private repo). Eval scores and findings unchanged. Verified: 102 tests pass.
