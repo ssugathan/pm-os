@@ -32,6 +32,86 @@ from pmos.validation import (
 )
 
 
+class SubTaskDriftError(RuntimeError):
+    """The agent's sub-task list no longer matches the run's stored records.
+
+    Raised on resume instead of guessing which stored record belongs to which
+    sub-task. `added`, `removed` and `reordered` list sub-task names.
+    """
+
+    def __init__(
+        self,
+        agent_name: str,
+        run_id: str,
+        *,
+        added: list[str] | None = None,
+        removed: list[str] | None = None,
+        reordered: list[str] | None = None,
+        duplicates: list[str] | None = None,
+    ):
+        self.agent_name = agent_name
+        self.run_id = run_id
+        self.added = added or []
+        self.removed = removed or []
+        self.reordered = reordered or []
+        self.duplicates = duplicates or []
+        parts = [
+            f"{label}: {names}"
+            for label, names in (
+                ("added", self.added),
+                ("removed", self.removed),
+                ("reordered", self.reordered),
+                ("duplicate names", self.duplicates),
+            )
+            if names
+        ]
+        super().__init__(
+            f"Sub-tasks of agent {agent_name!r} changed since run {run_id!r} started "
+            f"({'; '.join(parts)}). Start a new run_id, or migrate the state file "
+            "explicitly."
+        )
+
+
+def _duplicates(names: list[str]) -> list[str]:
+    seen: set[str] = set()
+    dups: list[str] = []
+    for n in names:
+        if n in seen and n not in dups:
+            dups.append(n)
+        seen.add(n)
+    return dups
+
+
+def _match_sub_tasks(
+    agent_name: str,
+    run_id: str,
+    records: list[SubTaskRecord],
+    defs: list[tuple[str, Callable[[AgentRunState], Any]]],
+) -> list[tuple[SubTaskRecord, str, Callable[[AgentRunState], Any]]]:
+    """Pair stored records with current sub-task definitions by name.
+
+    Any difference in the name sequence (added, removed, reordered, duplicated)
+    raises `SubTaskDriftError`; a record is never attached to a different
+    sub-task than the one it was created for.
+    """
+    stored = [r.name for r in records]
+    current = [n for n, _ in defs]
+    dups = _duplicates(current) or _duplicates(stored)
+    if dups:
+        raise SubTaskDriftError(agent_name, run_id, duplicates=dups)
+    if stored != current:
+        added = [n for n in current if n not in stored]
+        removed = [n for n in stored if n not in current]
+        stored_common = [n for n in stored if n in current]
+        current_common = [n for n in current if n in stored]
+        reordered = [a for a, b in zip(stored_common, current_common, strict=True) if a != b]
+        raise SubTaskDriftError(
+            agent_name, run_id, added=added, removed=removed, reordered=reordered
+        )
+    by_name = {r.name: r for r in records}
+    return [(by_name[name], name, func) for name, func in defs]
+
+
 class Agent:
     """Subclasses set `name` and implement `sub_tasks()`.
 
@@ -253,10 +333,13 @@ class Agent:
                 sub_tasks=[SubTaskRecord(name=name) for name, _ in defs],
             )
 
+        # Check before touching state, so a drifted run's file stays as it was.
+        plan = _match_sub_tasks(self.name, run_id, state.sub_tasks, defs)
+
         state.task_state = TaskState.RUNNING
         state.save(self.base_dir)
 
-        for record, (sub_task_name, func) in zip(state.sub_tasks, defs, strict=True):
+        for record, sub_task_name, func in plan:
             if record.status == SubTaskStatus.COMPLETE:
                 continue  # idempotent skip
             self._execute_sub_task(state, record, sub_task_name, func)
