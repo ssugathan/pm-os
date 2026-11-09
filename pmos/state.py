@@ -115,7 +115,11 @@ class AgentRunState:
 
 @dataclass
 class OrchestratorState:
-    """Pipeline-level state. Tracks which agent is active and run-level metadata."""
+    """Pipeline-level state for one run. Tracks which agent is active and run-level metadata.
+
+    Keyed per run: each run_id has its own file (see `orchestrator_state_path`),
+    so resuming one run can never read or overwrite another run's state.
+    """
 
     run_id: str
     run_started_at_commit: str = ""
@@ -146,11 +150,11 @@ class OrchestratorState:
 
     def save(self, base_dir: Path) -> None:
         self.updated_at = now_iso()
-        atomic_write_json(orchestrator_state_path(base_dir), self.to_dict())
+        atomic_write_json(orchestrator_state_path(base_dir, self.run_id), self.to_dict())
 
     @classmethod
-    def load(cls, base_dir: Path) -> OrchestratorState:
-        return cls.from_dict(read_json(orchestrator_state_path(base_dir)))
+    def load(cls, base_dir: Path, run_id: str) -> OrchestratorState:
+        return cls.from_dict(read_json(orchestrator_state_path(base_dir, run_id)))
 
 
 def now_iso() -> str:
@@ -183,5 +187,10 @@ def agent_state_path(base_dir: Path, agent_name: str, run_id: str) -> Path:
     return Path(base_dir) / "_system" / "agent-state" / f"{agent_name}-{run_id}.json"
 
 
-def orchestrator_state_path(base_dir: Path) -> Path:
+def orchestrator_state_path(base_dir: Path, run_id: str) -> Path:
+    return Path(base_dir) / "_system" / "orchestrator" / "runs" / f"{run_id}.json"
+
+
+def legacy_orchestrator_state_path(base_dir: Path) -> Path:
+    """Pre-per-run single shared state file. Read only for one-time migration."""
     return Path(base_dir) / "_system" / "orchestrator" / "current-state.json"
