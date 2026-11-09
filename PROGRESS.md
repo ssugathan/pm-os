@@ -8,13 +8,16 @@ _Last updated: November 8, 2026_
 _This block is the authoritative status. Git is authoritative for "done": merged to main = done; an open PR or working branch = in flight. The Background section below is design context._
 
 ### Status
-**Phase 1 orchestrator is merged to `main`.** In flight: `chore/ci-and-lint` (CI workflow + lint/dependency hygiene), PR open, not merged.
+**Phase 1 orchestrator is merged to `main`.** In flight: `chore/ci-maintenance` (CI action bumps + Dependabot), PR open, not merged.
+
+**Repo re-created (observed 2026-11-09):** `main` is now a single commit, `4a7d027 Initial public release`, and PR numbering restarted (`chore/ci-maintenance` opened as PR #1). Its tree includes all the work below, including CI and hygiene from `chore/ci-and-lint` (merged 2026-11-08). The PR numbers in this ledger dated before 2026-11-09 refer to the previous repository, not to PRs in this one.
 
 - Phase 1 (built May 31 – Jun 2 on `build/phase-1-orchestrator`) plus the Sep 2 safe-refactor pass merged via PR #1 (`refactor/safe-pass-v2`) on 2026-09-05.
 - Cross-agent handoff rules merged via PR #2 (`docs/cross-agent-handoff`) on 2026-09-05.
 - Cloud workflow test merged via PR #3 (`chore/cloud-workflow-test`) on 2026-11-08.
 - Ledger reconcile + privacy cleanup merged via PR #4 (`chore/progress-privacy-reconcile`) and PR #5 (`chore/remove-personal-context`) on 2026-11-08.
-- The six branches above are fully merged and can be deleted.
+- CI and hygiene merged via PR #6 (`chore/ci-and-lint`) on 2026-11-08.
+- The branches above were merged in the previous repository; they share no history with the current `main` and must not be merged again.
 
 What exists in code (`pmos/`), all covered by the mocked test suite:
 - State machine, per-agent-per-run state files, orchestrator state file, atomic writes (`pmos/state.py`)
@@ -29,13 +32,13 @@ What exists in code (`pmos/`), all covered by the mocked test suite:
 Not built: the 7 production agents, pipeline sequencing, cycle types, context-budget enforcement, LLM content validation, Gemini/GPT adapters, cross-resume retry accounting, PostHog backend. Full list in `README.md` → "Designed but not built". Stop hook + TDD pre-write hook are deferred to Phase 2 (built alongside Dev & QA).
 
 Verification state (2026-11-08):
-- `pytest`: 102 passed on a clean `pip install -e ".[dev]"` in a fresh Python 3.11 venv (anthropic 2.6.0, httpx 0.28.1) — on `chore/ci-and-lint`.
-- `ruff check .`: clean with ruff pinned to 0.17.4 and an explicit rule `select` in `pyproject.toml` — on `chore/ci-and-lint`.
-- CI: `.github/workflows/ci.yml` (job `lint-and-test`: Python 3.11, ruff, pytest; no keys, no network tests) — on `chore/ci-and-lint`.
+- `pytest`: 102 passed on a clean `pip install -e ".[dev]"` in a fresh Python 3.11 venv (anthropic 2.6.0, httpx 0.28.1) — on `main`.
+- `ruff check .`: clean with ruff pinned to 0.17.4 and an explicit rule `select` in `pyproject.toml` — on `main`.
+- CI: `.github/workflows/ci.yml` (job `lint-and-test`: Python 3.11, ruff, pytest; no keys, no network tests) — on `main`.
 
 ### Next up
-1. **Owner decision: git-history privacy cleanup.** Personal context was removed from this file on 2026-11-08 but remains in earlier commits of `PROGRESS.md` (and of `session-handoff.md` before the rename), and the repo is intended to be public. Decide whether to leave history as is or rewrite it (owner-only action; agents must not rewrite history). The other files flagged by the 2026-11-08 scan were cleaned in `chore/remove-personal-context`, so their earlier versions are also in history. Kept deliberately: `tests/test_telemetry.py:29,31` (`"sid"` as a test value), the blog URL at `README.md:41`, and the plan names in the eval's model list at `_system/model-eval/raw-evals.md:22-23`.
-2. **Merge `chore/ci-and-lint`, then enable "require status checks" on `main`** (owner-only, GitHub settings) using the `lint-and-test` check. CI and hygiene work itself is done on that branch.
+1. **Owner decision: git-history privacy cleanup** — appears done (repo re-created with a single-commit `main` on 2026-11-09); owner to confirm, then drop this item. Personal context was removed from this file on 2026-11-08 but remains in earlier commits of `PROGRESS.md` (and of `session-handoff.md` before the rename), and the repo is intended to be public. Decide whether to leave history as is or rewrite it (owner-only action; agents must not rewrite history). The other files flagged by the 2026-11-08 scan were cleaned in `chore/remove-personal-context`, so their earlier versions are also in history. Kept deliberately: `tests/test_telemetry.py:29,31` (`"sid"` as a test value), the blog URL at `README.md:41`, and the plan names in the eval's model list at `_system/model-eval/raw-evals.md:22-23`.
+2. **Enable "require status checks" on `main`** (owner-only, GitHub settings) using the `lint-and-test` check. CI and hygiene are merged.
 3. **Fix known bugs a/b/c** (see Known issues) with a regression test for each. Orchestrator state is to be keyed per run, so resuming an old run and starting a new one cannot collide.
 4. **Doc fixes.** README layout (still lists `session-handoff.md`; missing `AGENTS.md`, `PROGRESS.md`); `design.md` says agent-state writes are async/background-thread but the code (and AGENTS.md) is synchronous — update the doc to match; add crash-recovery caveats to README (single shared orchestrator state file, stale errors on resume, sub-task drift).
 5. Build Phase 2: Dev & QA agent on the existing `LLMAgent` + Stop hook framework; test on the Lego simulator in `qa_only` mode first.
@@ -56,6 +59,7 @@ Verification state (2026-11-08):
 - The fresh-install `httpx` failure was observed with anthropic 2.6.0 only.
 
 ### Work log
+- 2026-11-09 — CI maintenance (`chore/ci-maintenance`): `actions/checkout` v4 → v7 and `actions/setup-python` v5 → v7 (latest majors; both declare `using: node24`), `runs-on` pinned to `ubuntu-24.04`; added `.github/dependabot.yml` (weekly, `github-actions` ecosystem only). Ledger reconciled with the 2026-11-09 re-creation of the repo (single-commit `main`; PR numbers restarted). Verified: `pytest` 102 passed, `ruff check .` clean; CI result recorded on the PR.
 - 2026-11-08 — CI and hygiene (`chore/ci-and-lint`): `httpx` declared as a dev dependency; ruff pinned to 0.17.4 with explicit `select` (E4/E7/E9/F baseline + I001, UP017, UP035, PLW1510 — exactly what 0.17.4 defaults reported); 18 lint errors fixed (16 by `ruff check --fix`, `check=False` on the two git `subprocess.run` calls in `pmos/prompts.py`); added `.github/workflows/ci.yml`; removed stale `.claude/commands/` references (CLAUDE.md, AGENTS.md, .gitignore); `Claude outputs/` gitignored. Verified in a fresh Python 3.11 venv: clean install, `ruff check .` green, 102 tests pass. Not adopted: broader UP/PLW families (would add UP042 `str, Enum` → `StrEnum`, an unsafe fix that changes `str()` output).
 - 2026-11-08 — Removed personal context outside PROGRESS.md (`chore/remove-personal-context`): neutral wording in Titato artifacts, eval notes, design.md and a telemetry comment; LinkedIn/blog planning removed from eval notes; deleted the three `.claude/commands/` files (they depended on the private repo). Eval scores and findings unchanged. Verified: 102 tests pass.
 - 2026-11-08 — Read-only repo audit, then this ledger reconciled with git/GitHub and stripped of personal context (`chore/progress-privacy-reconcile`). Verified: 102 tests pass, ruff reports 18 errors, bugs a/b/c reproduced on main.
